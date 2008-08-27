@@ -1,0 +1,109 @@
+body {
+	background: #F66;
+	color: black;
+}
+
+a[href] {
+	color: #149;
+}
+
+a[href]:visited {
+	color: #164;
+}
+
+div.m {
+	background: #FAA;
+	text-align: center;
+	padding: 0.3em;
+}
+
+div.i {
+	display: inline-block;
+	text-align: justify;
+}
+
+a.me {
+	font-weight: bold;
+}
+
+div.g {
+	line-height: 2;
+	text-align: justify;
+}
+
+div.g div {
+	line-height: 1;
+	display: inline;
+	padding: 0;
+	margin: 0;
+}
+div.g div div {
+	display: table-cell;
+	text-align: center;
+	vertical-align: bottom;
+	padding: 0;
+	margin: 0;
+/*	border: 1px solid white;*/
+	background: #FAA;
+}
+div.g div div a {
+	line-height: 0;
+	padding: 0;
+	margin: 0;
+}
+div.g div div a div {
+	line-height: 0;
+	display: table;
+	vertical-align: middle;
+	height: 160px;
+	width: 100%;
+	padding: 0;
+	margin: 0;
+}
+div.g div div a div div {
+	display: table-cell;
+	vertical-align: middle;
+	white-space: nowrap;
+	height: 160px;
+	width: 100%;
+	padding-left: 5px;
+	padding-right: 5px;
+/*	border: 1px solid #FAA;*/
+	background: #FAA;
+}
+div.g div div a:visited div div {
+/*	border: 1px solid #F77;*/
+	background: #F98;
+}
+div.g div div a div div img {
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+div.g div div > div {
+	display: table;
+	margin: 0;
+	text-align: center;
+	width: 100%;
+}
+div.g div div > div div {
+	display: table-cell;
+	margin: 0;
+	padding: 0.2em;
+	text-align: center;
+	width: 100%;
+}
+
+div#nvcontent {
+}
+
+div#editlink, div#editor {
+	display: block;
+}
+
+div#autocomplete, div#statmsg {
+	position: absolute;
+	background: #F66;
+	border: 1px #B55 solid;
+	display: none;
+}
