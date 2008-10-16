@@ -3,52 +3,70 @@ initialise();
 
 var tagform;
 var tagbox;
+var tagdisp;
+var ratingdisp;
 var stat_msg;
 var autocomplete;
 
-var xhttp;
+var xhttp_t;
+var xhttp_r;
 
 function initialise() {
 	tagform = document.getElementById("tagform");
 	tagbox = document.getElementById("tagbox");
 	tagdisp = document.getElementById("tags");
+	ratingdisp = document.getElementById("rating");
 	stat_msg = document.getElementById("statmsg");
 	image_id = document.getElementById("imageid");
 	autocomplete = document.getElementById("autocomplete");
-	xhttp = new XMLHttpRequest();
+	xhttp_t = new XMLHttpRequest();
+	xhttp_r = new XMLHttpRequest();
+	document.getElementById("editlinklink").addEventListener('click', show_editor, false);
 	tagform.addEventListener('submit', submit_tags, false);
 	tagbox.addEventListener('keydown', tagbox_autocomplete, false);
 	tagbox.addEventListener('keypress', tagbox_keypress, false);
 	get_tags();
+	get_rating();
 }
 
-function test_xhttp() {
-	if (!xhttp)
+function test_xhttp_t() {
+	if (!xhttp_t)
 		return 0;
-	if (xhttp.readyState == 0 || xhttp.readyState == 4)
+	if (xhttp_t.readyState == 0 || xhttp_t.readyState == 4)
 		return 1;
 	return 0;
 }
 
-function show_editor() {
+function test_xhttp_r() {
+	if (!xhttp_r)
+		return 0;
+	if (xhttp_r.readyState == 0 || xhttp_r.readyState == 4)
+		return 1;
+	return 0;
+}
+
+function show_editor(e) {
+	e.preventDefault();
 	document.getElementById('editlink').style.display = 'none';
 	document.getElementById('editor').style.display = 'block';
 }
 
 function get_tags() {
-	if (!test_xhttp())
+	if (!test_xhttp_t())
 		return; // Busy
-	xhttp.open("GET","tag_list?img=" + image_id.value,true);
-	xhttp.onreadystatechange = tags_got;
-	xhttp.send('');
+	xhttp_t.open("GET","tag_list?img=" + image_id.value,true);
+	xhttp_t.onreadystatechange = tags_got;
+	xhttp_t.send('');
 }
 
+var image_tag_id_list = new Array();
 function tags_got() {
-	if (xhttp.readyState != 4)
+	if (xhttp_t.readyState != 4)
 		return;
 	
-	var tag_output = xhttp.responseText.split(/\n/);
+	var tag_output = xhttp_t.responseText.split(/\n/);
 	var i;
+	image_tag_list = new Array();
 	clear_box(tagdisp);
 	for(i=0; i<tag_output.length; i++) {
 		if (!tag_output[i])
@@ -59,7 +77,78 @@ function tags_got() {
 		var link = document.createElement("a");
 		link.href="index?tag="+bits[1]+"%3A"+bits[2];
 		link.appendChild(document.createTextNode(parseInt(bits[3]) ? bits[1] + " (" + bits[2] + ")" : bits[1]));
+		image_tag_id_list.push(bits[0]);
 		tagdisp.appendChild(link);
+	}
+}
+
+function get_rating() {
+	if (!test_xhttp_r())
+		return; // Busy
+	xhttp_r.open("GET","rating_status?img=" + image_id.value,true);
+	xhttp_r.onreadystatechange = rating_got;
+	xhttp_r.send('');
+}
+
+function rating_got() {
+	if (xhttp_r.readyState != 4)
+		return;
+	
+	clear_box(ratingdisp);
+	var vote_output = xhttp_r.responseText.split("\n");
+	if (vote_output[0] == "nosess") {
+		ratingdisp.appendChild(document.createTextNode("Rating: " + vote_output[1] + " (no session)."));
+	} else if (vote_output[0] == "rated") {
+		ratingdisp.appendChild(document.createTextNode("Rating: " + vote_output[1] + " (already rated)."));
+	} else if (vote_output[0] == "rateable") {
+		ratingdisp.appendChild(document.createTextNode("Rating: " + vote_output[1] + " ("));
+		var link1 = document.createElement("a");
+		link1.href="#";
+		link1.addEventListener('click', rating_rate, false);
+		link1.votedirection="up";
+		link1.appendChild(document.createTextNode("+"));
+		ratingdisp.appendChild(link1);
+		ratingdisp.appendChild(document.createTextNode("/"));
+		var link2 = document.createElement("a");
+		link2.href="#";
+		link2.addEventListener('click', rating_rate, false);
+		link2.votedirection="down";
+		link2.appendChild(document.createTextNode("-"));
+		ratingdisp.appendChild(link2);
+		ratingdisp.appendChild(document.createTextNode(")."));
+	} else {
+		ratingdisp.appendChild(document.createTextNode("Rating: Error."));
+	}
+}
+
+function rating_rate(e) {
+	e.preventDefault();
+	if (!test_xhttp_r())
+		return; // Busy
+	
+	clear_box(ratingdisp);
+	ratingdisp.appendChild(document.createTextNode("Please wait..."));
+
+	xhttp_r.open("GET","rating_submit?img=" + image_id.value + "&rating=" + e.currentTarget.votedirection, true);
+	xhttp_r.onreadystatechange = rating_done;
+	xhttp_r.send('');
+}
+
+function rating_done() {
+	if (xhttp_r.readyState != 4)
+		return;
+	
+	clear_box(ratingdisp);
+	var vote_output = xhttp_r.responseText;
+	if (vote_output == "error") {
+		ratingdisp.appendChild(document.createTextNode("Rating error 1"));
+	} else if (vote_output == "nosess") {
+		ratingdisp.appendChild(document.createTextNode("Rating failed (no session)."));
+	} else if (vote_output == "already_rated") {
+		ratingdisp.appendChild(document.createTextNode("Rating failed (already rated)."));
+	} else if (vote_output == "rated") {
+		ratingdisp.appendChild(document.createTextNode("Rating changed; please wait..."));
+		get_rating();
 	}
 }
 
@@ -68,7 +157,7 @@ function submit_tags(e) {
 		clearTimeout(autocomplete_timer);
 	autocomplete.style.display = 'none';
 	stat_msg.style.display = 'none';
-	if (!test_xhttp())
+	if (!test_xhttp_t())
 		return; // Busy
 	e.preventDefault();
 	var tags = tagbox.value.split(/ +/);
@@ -83,16 +172,16 @@ function submit_tags(e) {
 		submit_str += "&";
 		submit_str += "tag=" + str;
 	}
-	xhttp.open("GET","tag_submit?" + submit_str,true);
-	xhttp.onreadystatechange = submit_done;
-	xhttp.send('');
+	xhttp_t.open("GET","tag_submit?" + submit_str,true);
+	xhttp_t.onreadystatechange = submit_done;
+	xhttp_t.send('');
 }
 
 function submit_done() {
-	if (xhttp.readyState != 4)
+	if (xhttp_t.readyState != 4)
 		return;
 	
-	var tag_output = xhttp.responseText.split(/\n/);
+	var tag_output = xhttp_t.responseText.split(/\n/);
 	if (tag_output[0]) {
 		// Something worked; update tags list.
 	}
@@ -129,8 +218,10 @@ function tagbox_autocomplete(e) {
 	if (autocomplete_timer)
 		clearTimeout(autocomplete_timer);
 	
-	if (e.keyCode == 38 || e.keyCode == 40)
+	if (e.keyCode == 38 || e.keyCode == 40) {
+		e.preventDefault();
 		return;
+	}
 
 	// Prevent tab getting nommed by Opera.
 	if (e.keyCode == 9) {
@@ -144,11 +235,10 @@ function tagbox_autocomplete(e) {
 
 	autocomplete.style.display = 'none';
 	stat_msg.style.display = 'none';
-	if (!test_xhttp())
+	if (!test_xhttp_t())
 		return;
 	
-	if (!tagbox.value.match(/^[a-z0-9_': @./!?\\-]*$/) || e.keyCode == 32 || e.keyCode == 13) { // space, tab, \ and backspace
-		
+	if (!tagbox.value.match(/^[a-z0-9_': @./!?\\-]*$/)) {
 		return;
 	}
 
@@ -168,6 +258,24 @@ function tagbox_autocomplete_1() {
 		if (ac_after.indexOf('\\') >= 0) {
 			return;
 		}
+	} else if (tagbox.value.match(/^$| $/)) {
+		var tag_query = '';
+		var i;
+		for(i = 0; i < image_tag_id_list.length; i++) {
+			tag_query += "&tag_id=" + image_tag_id_list[i];
+		}
+		var tag_split = tagbox.value.split(/ /);
+		for(i = 0; i < tag_split.length; i++) {
+			if (!tag_split[i] || tag_split[i].match(/[^a-z0-9_': @./!?\\-]/))
+				continue;
+			tag_query += "&tag=" + tag_split[i];
+		}
+		ac_before = tagbox.value;
+		ac_after = "";
+		xhttp_t.open('GET','tag_suggest?'+tag_query,true);
+		xhttp_t.onreadystatechange = tagbox_autocomplete_2;
+		xhttp_t.send('');
+		return;
 	} else {
 		var offset = tagbox.value.lastIndexOf(' ') + 1;
 		ac_before = tagbox.value.substring(0, offset);
@@ -177,21 +285,23 @@ function tagbox_autocomplete_1() {
 	str = str.replace(/(?:\\)/g, "");
 	str = str.replace("'", "%27");
 	str = str.replace(/:.*/, "");
-	if (!str)
+
+	if (!str) {
 		return;
-	
-	xhttp.open('GET','tag_autocomplete?partial='+str,true);
-	xhttp.onreadystatechange = tagbox_autocomplete_2;
-	xhttp.send('');
+	}
+
+	xhttp_t.open('GET','tag_autocomplete?partial='+str,true);
+	xhttp_t.onreadystatechange = tagbox_autocomplete_2;
+	xhttp_t.send('');
 }
 
 var ac_options;
 var ac_selected;
 function tagbox_autocomplete_2() {
-	if (xhttp.readyState != 4)
+	if (xhttp_t.readyState != 4)
 		return;
 	
-	var got_options = xhttp.responseText;
+	var got_options = xhttp_t.responseText;
 	if (!got_options)
 		return;
 	ac_options = got_options.split(/\n/);
@@ -232,6 +342,10 @@ function autocomplete_selected(o) {
 function tagbox_keypress(e) {
 	if (e.keyCode != 38 && e.keyCode != 40)
 		return;
+	
+	if (!ac_options) {
+		return;
+	}
 
 	if (ac_selected >= 0) {
 		ac_options[ac_selected][5].style.background = '#F66';
@@ -254,6 +368,7 @@ function tagbox_keypress(e) {
 		ac_options[ac_selected][5].style.background = '#FF6';
 	}
 	autocomplete_selected(ac_options[ac_selected][5]);
+	e.preventDefault();
 }
 
 function clear_box(box) {

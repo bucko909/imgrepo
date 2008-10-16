@@ -34,7 +34,7 @@ sub deal_with_entry {
 	} elsif ($url =~ m#^http://(?:www.)nicovideo.jp/watch/..(\d+)#) {
 		$image_type = "nicovideo";
 		$imgurl = "http://tn-skr2.smilevideo.jp/smile?i=$1";
-	} elsif ($url =~ m#^http://(?:www.)?youtube.com/.*\bv=([^&]+)#) {
+	} elsif ($url =~ m#^http://(?:\w+.)?youtube.com/.*\bv=([^&]+)#) {
 		$image_type = "youtube";
 		my $vidid = $1;
 		print "Mangling youtube for $url.\n";
@@ -48,6 +48,20 @@ sub deal_with_entry {
 			print "Youtube: Preview image seems to be at $imgurl\n";
 		} else {
 			print "Youtube: Failed to find preview for $url\n";
+			return 1;
+		}
+	} elsif ($url =~ m#^http://rule34.paheal.net/#) {
+		print "Mangling rule34 URL $url.\n";
+		my $resp = $ua->get($url,
+			Referer => 'http://rule34.paheal.net/',
+		);
+		$referer_url = $url;
+		if ($resp->content =~ m#<img id='main_image' src='(.*?)'>#) {
+			$imgurl = $1;
+			print "OK; I think I need $imgurl.\n";
+		} else {
+			print "Parse failure.\n";
+			print $resp->content;
 			return 1;
 		}
 	} elsif ($url =~ m#^http://img\.eternallybored\.org/img#) {
@@ -130,6 +144,11 @@ sub deal_with_entry {
 				my $img_oid = $_->[0];
 				my $ofn = $_->[1];
 				$ofn =~ s#^(.)(.)#$1/$2/$1$2#;
+
+				# Ensure we don't stupidly collide when images are deleted.
+				$_->[1] =~ /-(\d+)/;
+				$count = $1 if $1 > $count;
+
 				if (!system("diff", $temp_file, "$images/$ofn")) {
 					print "$url is a duplicate of $ofn; skipping.\n";
 					$dbi->do("INSERT INTO image_postings (image_id, line_id, url) VALUES (?, ?, ?)", {}, $img_oid, $line_id, $url);
@@ -142,6 +161,13 @@ sub deal_with_entry {
 		$count++;
 
 		my $type = lc $resp->header('Content-Type');
+		if ($imgurl =~ m#^http://.*/_images/.*\.(\w+)# && $type eq 'text/plain') {
+			my $ext = lc $1;
+			$ext = 'jpeg' if $ext eq 'jpg';
+			$type = 'image/'.$ext;
+		} else {
+			print "$imgurl";
+		}
 		$type =~ s/;.*//;
 		my $ext;
 		if ($type !~ m#^image/#) {

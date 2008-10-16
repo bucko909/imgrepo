@@ -1,14 +1,14 @@
 #!/usr/bin/perl
 
 use DBI;
-use CGI;
-use POSIX qw/strftime/;
 use Stuff;
+use POSIX qw/strftime/;
 use strict;
 use warnings;
 
 my $dbi = Stuff->get_dbi();
-my $q = CGI->new;
+my $q = MyCGI->new($dbi);
+my $sess_id = $q->get_session(1);
 
 my $image_id = $q->param('i');
 
@@ -115,10 +115,10 @@ resize();
 END
 }
 print qq|<div class="i">|;
-print "<p>Viewed $res->[0][6] times.</p>";
+print qq|<p>Viewed $res->[0][6] times. <span id="rating"></span></p>|;
 print qq|<p>Tags: <span id="tags"></span></p>|;
-print qq|<div id="editlink"><a href="#" onclick="javascript:show_editor();">Edit</a></div>|;
-print qq|<div id="editor" style="display: none;"><p><form id="tagform"><input type="text" id="tagbox" size="80"/> <input type="submit" id="tagsubmitbutton" value="Add Tags"/><input type="hidden" id="imageid" value="$res->[0][0]"/></form></p><div id="statmsg"/><div id="autocomplete"/></div>|;
+print qq|<div id="editlink"><a href="#" id="editlinklink">Edit</a></div>|;
+print qq|<div id="editor" style="display: none;"><p><form id="tagform"><input type="text" id="tagbox" size="80" autocomplete="off"/> <input type="submit" id="tagsubmitbutton" value="Add Tags"/><input type="hidden" id="imageid" value="$res->[0][0]"/></form></p><div id="statmsg"/><div id="autocomplete"/></div>|;
 print qq|<script language="javascript" src="media/tagedit.js"/>|;
 print "</div><br/>";
 print qq|<div class="i">|;
@@ -137,7 +137,7 @@ for my $post (@$posts) {
 		$text =~ s#[^ -~]#?#g;
 		$text =~ s#(http://\S+)#<a href="$1">$1</a>#g;
 		$text =~ s#(href="$qurl")#class="me" $1#g;
-		push @ltext, strftime("[%H:%M:%S] ", localtime $_->[1]).qq|&lt;<a href="?nick=$_->[2]">$_->[2]</a>&gt; $text|;
+		push @ltext, strftime("[%H:%M:%S] ", localtime $_->[1]).qq|&lt;<a href="/?nick=$_->[2]">$_->[2]</a>&gt; $text|;
 	}
 	print qq|<p>|.join("<br/>", @ltext)."</p>";
 }

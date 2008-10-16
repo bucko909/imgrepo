@@ -15,16 +15,38 @@ sub on_001 {
 
 	my $channels = $heap->{CHANNELS};
 	$irc->yield( join => $channels );
+	if (my $ping_id = $heap->{ping_id}) {
+		$irc->delay_remove($ping_id);
+		delete $heap->{ping_id};
+	}
+	$heap->{ping_id} = $irc->delay( [ ping => 'keepalive' ], 30 );
+}
+
+sub on_pong {
+	my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
+	my $irc = $heap->{IRC};
+	if ($_[ARG0]) {
+		print "PONG :$_[ARG0]\n";
+	} else {
+		print "PONG\n";
+	}
+	if (my $ping_id = $heap->{ping_id}) {
+		$irc->delay_remove($ping_id);
+		delete $heap->{ping_id};
+	}
+	$heap->{ping_id} = $irc->delay( [ ping => 'keepalive' ], 150 );
 }
 
 sub register {
-	my $kernel = $_[KERNEL];
+	my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
+	my $irc = $heap->{IRC};
 	my %events = (
 		irc_001    => sub { goto &{'Repo::Hooks::on_001'} },
 		irc_433    => sub { goto &{'Repo::Hooks::on_nickinuse'} },
 		irc_public => sub { goto &{'Repo::Hooks::on_public'} },
 		irc_msg => sub { goto &{'Repo::Hooks::on_private'} },
 		irc_disconnected => sub { goto &{'Repo::Hooks::on_disconnect'} },
+		irc_pong => sub { goto &{'Repo::Hooks::on_pong'} },
 		reconnect => sub { goto &{'Repo::Hooks::reconnect'} },
 		register_events => sub { goto &{'Repo::Hooks::register'} },
 	);
@@ -93,7 +115,10 @@ sub get_dbi {
 		die("Sorry, the .my.cnf file appears to be corrupt");
 	}
 
-	return DBI->connect("dbi:mysql:database=$database", $user, $password);
+	my $dbh = DBI->connect("dbi:mysql:database=$database", $user, $password);
+	$dbh->{mysql_auto_reconnect} = 1;
+	$dbh->{mysql_enable_utf8} = 1;
+	return $dbh;
 }
 
 # The bot has received a public message.  Parse it for commands, and
@@ -160,7 +185,7 @@ sub process_public {
 		}
 		return;
 	}
-	while ($msg =~ m#(http://\S+/\S*)#cg) {
+	while ($msg =~ m#(http://\S+)#cg) {
 		print "URL: $1\n";
 		$dbi->do("INSERT INTO upload_queue(url, line_id) VALUES(?, ?)", {}, $1, $line_id);
 	}

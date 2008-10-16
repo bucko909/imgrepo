@@ -1,13 +1,14 @@
 #!/usr/bin/perl
 
 use DBI;
-use CGI;
+use Stuff;
 use POSIX qw/strftime/;
 use strict;
 use warnings;
 
 my $dbi = get_dbi();
-my $q = CGI->new;
+my $q = MyCGI->new($dbi);
+my $sess_id = $q->get_session(1);
 
 my ($extra, $join, @bind) = ("1", "");
 if (my $chan = $q->param('chan')) {
