@@ -26,8 +26,20 @@ sub deal_with_entry {
 	my $referer_url;
 	my $image_type = 'image';
 	if ($url eq 'reload') {
+		print "Reloading.\n";
 		do 'grabhooks.pl';
 		return 1;
+	} elsif ($url =~ m#^delete (\d+)$#) {
+		my $image_id = $1;
+		my $res = $dbi->selectall_arrayref("SELECT images.id, local_filename, local_thumbname FROM images WHERE images.id = ?", {}, $image_id);
+		if (!$res || !@$res) {
+			print "Bad image number $image_id.\n";
+		} else {
+			print "Deleting image number $image_id.\n";
+			remove_image($dbi, @{$res->[0]});
+			print "Done.\n";
+			return 1;
+		}
 	} elsif ($url =~ m#^http://[^/]*abhor\.co\.uk/#i) {
 		print "Ignoring self-referential URL $url.\n";
 		return 1;
@@ -91,10 +103,24 @@ sub deal_with_entry {
 			print "Parse failure.\n";
 			return 1;
 		}
-	} elsif ($url =~ m#^(http://\S+\.pixiv.net/img/\S+/\d+\.\w+)$#) {
+	} elsif ($url =~ m#^http://\S+\.pixiv.net/img/\S+/\d+\.\w+$#) {
 		print "Setting pixiv referer for URL $url\n";
 		$referer_url = "http://www.pixiv.net/member_illust.php";
 		$imgurl = $url;
+	} elsif ($url =~ m#http://www.pixiv.net/member_illust.php\?mode=(?:medium|big)&illust_id=(\d+)#) {
+		print "Mangling pixiv URL $url\n";
+		my $resp = $ua->get($url,
+			Referer => 'http://www.pixiv.net/',
+		);
+		$referer_url = $url;
+		if ($resp->content =~ m#src="(http://\S+\.pixiv.net/img/\S+/\d+(?:_\w)?\.\w+)"#) {
+			$imgurl = $1;
+			$imgurl =~ s/_\w\././;
+			print "OK; I think I need $imgurl.\n";
+		} else {
+			print "Parse failure.\n";
+			return 1;
+		}
 	} elsif ($url =~ m#^http://(?:www.)motivatedphotos.com/#) {
 		print "Mangling motivatedphotos URL $url.\n";
 		my $resp = $ua->get($url,

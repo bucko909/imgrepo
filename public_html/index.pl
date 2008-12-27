@@ -11,7 +11,7 @@ my $q = MyCGI->new($dbi);
 my $sess_id = $q->get_session(1);
 
 my ($extra, $join, @bind) = ("1", "");
-my $order = "irc_lines.time DESC";
+my $order = "irc_lines.time DESC, images.id DESC";
 my @flags;
 my $by_image = 0;
 if (my $chan = $q->param('chan')) {
@@ -37,7 +37,10 @@ if (my $area = $q->param('min_area')) {
 if (my $has_tag = $q->param('has_tag')) {
 	$join .= " INNER JOIN image_tags t1 ON t1.image_id = images.id AND t1.tag_id != 4";
 }
-if (my $to_delete = $q->param('delq')) {
+if (my $by_img  = $q->param('by_image')) {
+	$by_image = 1;
+	$order = "images.id DESC";
+} elsif (my $to_delete = $q->param('delq')) {
 	$join .= " LEFT OUTER JOIN image_tags tdt ON tdt.image_id = images.id AND tdt.tag_id != 4";
 	$extra .= " AND tdt.tag_id IS NULL AND images.rating <= 0";
 	$order = "(images.id + images.rating*10000 + images.fullviews*1000)/(images.thumbnail_size + images.size)";
