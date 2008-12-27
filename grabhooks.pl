@@ -85,11 +85,16 @@ sub deal_with_entry {
 		$referer_url = $url;
 		if ($resp->content =~ m#src="(http://danbooru.donmai.us/data/sample/.*?)"# || $resp->content =~ m#src="(http://danbooru.donmai.us/data/(?!=preview).*?)"#) {
 			$imgurl = $1;
+			$imgurl =~ s|sample/sample-||;
 			print "OK; I think I need $imgurl.\n";
 		} else {
 			print "Parse failure.\n";
 			return 1;
 		}
+	} elsif ($url =~ m#^(http://\S+\.pixiv.net/img/\S+/\d+\.\w+)$#) {
+		print "Setting pixiv referer for URL $url\n";
+		$referer_url = "http://www.pixiv.net/member_illust.php";
+		$imgurl = $url;
 	} elsif ($url =~ m#^http://(?:www.)motivatedphotos.com/#) {
 		print "Mangling motivatedphotos URL $url.\n";
 		my $resp = $ua->get($url,
@@ -162,11 +167,12 @@ sub deal_with_entry {
 
 		my $type = lc $resp->header('Content-Type');
 		if ($imgurl =~ m#^http://.*/_images/.*\.(\w+)# && $type eq 'text/plain') {
+			# HACK. Fuck you, R34.
 			my $ext = lc $1;
 			$ext = 'jpeg' if $ext eq 'jpg';
 			$type = 'image/'.$ext;
 		} else {
-			print "$imgurl";
+			print "$imgurl\n";
 		}
 		$type =~ s/;.*//;
 		my $ext;
@@ -269,10 +275,15 @@ sub deal_with_entry {
 			}
 			$image->Write(filename => "$thumbs/$d1/$d2/$thumbfn", compress => 'JPEG');
 		}
-		$dbi->do("INSERT INTO images (local_filename, local_thumbname, md5sum, image_width, image_height, thumbnail_width, thumbnail_height, image_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", {}, $fn, $thumbfn, $sum, $width, $height, $pwidth, $pheight, $image_type);
+		my @s = stat("$thumbs/$d1/$d2/$thumbfn");
+		my $thumbsize = $s[7];
+		@s = stat($imagefile);
+		my $imagesize = $s[7];
+		$dbi->do("INSERT INTO images (local_filename, local_thumbname, md5sum, image_width, image_height, size, thumbnail_width, thumbnail_height, thumbnail_size, image_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", {}, $fn, $thumbfn, $sum, $width, $height, $imagesize, $pwidth, $pheight, $thumbsize, $image_type);
 		my $image_id = $dbi->last_insert_id(undef, undef, undef, undef);
 		$dbi->do("INSERT INTO image_postings (image_id, line_id, url) VALUES (?, ?, ?)", {}, $image_id, $line_id, $url);
 		print "$url successful (image number $image_id).\n";
+		cull_images($dbi);
 		return 1;
 	} else {
 		unlink($temp_file);
@@ -281,5 +292,51 @@ sub deal_with_entry {
 	}
 }
 
+sub cull_images {
+	my ($dbi) = @_;
+	my $total = $dbi->selectall_arrayref("SELECT SUM(thumbnail_size) + SUM(size) FROM images")->[0][0];
+	printf("Total space used: %0.2fGiB\n", $total/1024/1024/1024);
+	if ($total > 5 * 1024 * 1024 * 1024) {
+		my $remain = $total - 5 * 1024*1024*1024;
+		print "It's cullin' time ($remain bytes to go).\n";
+		#my $sth = $dbi->prepare("SELECT images.id, size + thumbnail_size, local_filename, local_thumbname FROM images INNER JOIN image_tags ON images.id = image_tags.image_id INNER JOIN tags ON tags.id = image_tags.tag_id WHERE tags.name = 'delete_me' AND images.rating < 0");
+		my $sth = $dbi->prepare("SELECT images.id, size + thumbnail_size, local_filename, local_thumbname FROM images LEFT OUTER JOIN image_tags tdt ON tdt.image_id = images.id AND tdt.tag_id != 4 WHERE tdt.tag_id IS NULL AND images.rating <= 0 GROUP BY images.id ORDER BY (images.id + images.rating*10000 + images.fullviews*1000)/(images.thumbnail_size + images.size)");
+		$sth->execute;
+		my $row;
+		my $removed = 0;
+		while($remain > 0 && ($row = $sth->fetchrow_arrayref)) {
+			$remain -= $row->[1];
+			print "Cull $row->[0] ($row->[2]); $row->[1] bytes ($remain left).\n";
+			remove_image($dbi, $row->[0], $row->[2], $row->[3]);
+			$removed++;
+		}
+		print "Total images culled: $removed.\n";
+		$sth->finish;
+	}
+}
+
+sub remove_image {
+	my ($dbi, $id, $if, $tf) = @_;
+	$if =~ s[^(.)(.)][$1/$2/$1$2];
+	$tf =~ s[^(.)(.)][$1/$2/$1$2];
+	my $doit = 1;
+	my $debug = 0;
+	print qq|unlink("$images/$if");\n| if $debug;
+	unlink("$images/$if") if $doit;
+	print qq|unlink("$thumbs/$tf");\n| if $debug;
+	unlink("$thumbs/$tf") if $doit;
+	print qq|$dbi->do("DELETE FROM image_tags WHERE image_id = ?", {}, $id);\n| if $debug;
+	$dbi->do("DELETE FROM image_tags WHERE image_id = ?", {}, $id) if $doit;
+	print qq|$dbi->do("DELETE FROM image_postings WHERE image_id = ?", {}, $id);\n| if $debug;
+	$dbi->do("DELETE FROM image_postings WHERE image_id = ?", {}, $id) if $doit;
+	print qq|$dbi->do("DELETE FROM image_visits WHERE image_id = ?", {}, $id);\n| if $debug;
+	$dbi->do("DELETE FROM image_visits WHERE image_id = ?", {}, $id) if $doit;
+	print qq|$dbi->do("DELETE FROM rating_raters WHERE image_id = ?", {}, $id);\n| if $debug;
+	$dbi->do("DELETE FROM rating_raters WHERE image_id = ?", {}, $id) if $doit;
+	print qq|$dbi->do("DELETE FROM rating_ratings WHERE image_id = ?", {}, $id);\n| if $debug;
+	$dbi->do("DELETE FROM rating_ratings WHERE image_id = ?", {}, $id) if $doit;
+	print qq|$dbi->do("DELETE FROM images WHERE id = ?", {}, $id);\n| if $debug;
+	$dbi->do("DELETE FROM images WHERE id = ?", {}, $id) if $doit;
+}
 
 1;

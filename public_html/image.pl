@@ -130,7 +130,7 @@ for my $post (@$posts) {
 
 	my $uchan = $postline->[0][3] || '';
 	$uchan =~ s/#/%23/g;
-	my @ltext = (qq|In |.($postline->[0][3] ? qq|<a href="?chan=$uchan">$postline->[0][3]</a>| : "private message").qq| on |.strftime("%a %b %d %Y", localtime $lines[0][1]).qq|:|);
+	my @ltext = (qq|In |.($postline->[0][3] ? qq|<a href="/?chan=$uchan">$postline->[0][3]</a>| : "private message").qq| on |.strftime("%a %b %d %Y", localtime $lines[0][1]).qq|:|);
 	for (@lines) {
 		my $qurl = quotemeta $post->[0];
 		my $text = $q->escapeHTML($_->[4]);

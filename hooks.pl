@@ -47,6 +47,8 @@ sub register {
 		irc_msg => sub { goto &{'Repo::Hooks::on_private'} },
 		irc_disconnected => sub { goto &{'Repo::Hooks::on_disconnect'} },
 		irc_pong => sub { goto &{'Repo::Hooks::on_pong'} },
+		irc_raw  => sub { goto &{'Repo::Hooks::on_raw'} },
+		irc_socketerr  => sub { goto &{'Repo::Hooks::on_socketerr'} },
 		reconnect => sub { goto &{'Repo::Hooks::reconnect'} },
 		register_events => sub { goto &{'Repo::Hooks::register'} },
 	);
@@ -56,6 +58,16 @@ sub register {
 	if ($_[ARG0]) {
 		$kernel->yield('reconnect');
 	}
+}
+
+sub on_socketerr {
+	my ($kernel, $heap, $session, $arg) = @_[ KERNEL, HEAP, SESSION, ARG0 ];
+	print "Socket error: $arg\n";
+}
+
+sub on_raw {
+	my ($kernel, $heap, $session, $arg) = @_[ KERNEL, HEAP, SESSION, ARG0 ];
+	print "Raw: $arg\n";
 }
 
 sub on_nickinuse {
@@ -93,6 +105,7 @@ sub reconnect {
 			Ircname  => 'Repository Grabber',
 			Server   => $heap->{SERVER},
 			Port     => '6667',
+			Raw      => 1,
 		}
 	);
 }
@@ -149,7 +162,7 @@ sub on_private {
 	$dbi->do("INSERT INTO irc_lines (time, nick, mask, text) VALUES(?, ?, ?, ?);", {}, time(), $nick, $mask, $msg);
 	my $id = $dbi->last_insert_id(undef, undef, undef, undef);
 
-	if ($nick =~ /^bucko/ && $msg =~ /^!reload kjdhf$/) {
+	if ($nick =~ /^bucko/ && $msg =~ /^!reload kjdhf2$/) {
 		$irc->yield( privmsg => $nick, "Trying..." );
 		my $r = do 'hooks.pl';
 		my $session = $_[SESSION];
@@ -157,7 +170,7 @@ sub on_private {
 		$rep =~ s/\n/\\n/g;
 		$kernel->yield($session, 'register');
 		$irc->yield( privmsg => $nick, $rep );
-	} elsif ($nick =~ /^bucko/ && $msg =~ /^!quit kjdhf$/) {
+	} elsif ($nick =~ /^bucko/ && $msg =~ /^!quit kjdhf2$/) {
 		$irc->yield( quit => "Message" );
 	} else {
 		process_public($dbi, $irc, $nick, $mask, $nick, $msg, $id);
@@ -166,7 +179,7 @@ sub on_private {
 
 sub process_public {
 	my ($dbi, $irc, $nick, $mask, $where, $msg, $line_id) = @_;
-	if (lc $nick eq 'ender' || lc $nick eq 'badgerbot') {
+	if (lc $nick eq 'badgerbot') {
 		return;
 	}
 	if ($msg =~ /^!(.*)/) {

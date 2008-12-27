@@ -11,6 +11,9 @@ my $q = MyCGI->new($dbi);
 my $sess_id = $q->get_session(1);
 
 my ($extra, $join, @bind) = ("1", "");
+my $order = "irc_lines.time DESC";
+my @flags;
+my $by_image = 0;
 if (my $chan = $q->param('chan')) {
 	$extra .= " AND channel = ?";
 	push @bind, $chan;
@@ -19,9 +22,28 @@ if (my $nick = $q->param('nick')) {
 	$extra .= " AND nick = ?";
 	push @bind, $nick;
 }
+if (my $url = $q->param('url')) {
+	$extra .= " AND url LIKE CONCAT('%', ?, '%')";
+	push @bind, $url;
+}
 if (my $type = $q->param('type')) {
 	$extra .= " AND images.image_type = ?";
 	push @bind, $type;
+}
+if (my $area = $q->param('min_area')) {
+	$extra .= " AND images.image_width * images.image_height >= ?";
+	push @bind, $area;
+}
+if (my $has_tag = $q->param('has_tag')) {
+	$join .= " INNER JOIN image_tags t1 ON t1.image_id = images.id AND t1.tag_id != 4";
+}
+if (my $to_delete = $q->param('delq')) {
+	$join .= " LEFT OUTER JOIN image_tags tdt ON tdt.image_id = images.id AND tdt.tag_id != 4";
+	$extra .= " AND tdt.tag_id IS NULL AND images.rating <= 0";
+	$order = "(images.id + images.rating*10000 + images.fullviews*1000)/(images.thumbnail_size + images.size)";
+	push @flags, "deletion_info";
+	$by_image = 1;
+#SELECT images.*, IF(image_tags.tag_id IS NULL,0,1) AS tagtot FROM images LEFT OUTER JOIN image_tags ON images.id = image_tags.image_id AND image_tags.tag_id != 4 WHERE rating <= 0 AND image_tags.tag_id IS NULL GROUP BY images.id ORDER BY (images.id + fullviews*1000)/(thumbnail_size + size);
 }
 if (my @tags = $q->param('tag')) {
 	$extra .= " AND (0";
@@ -45,9 +67,14 @@ if (my $skip = $q->param('skip')) {
 	}
 }
 
-my $res = $dbi->selectall_arrayref("SELECT images.id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, url, irc_lines.nick, irc_lines.channel, irc_lines.time, image_type FROM images INNER JOIN image_postings ON images.id = image_postings.image_id INNER JOIN irc_lines ON irc_lines.id = image_postings.line_id$join WHERE $extra ORDER BY irc_lines.time DESC LIMIT ?, ?;", {}, @bind, $start, $count+1);
+my $res;
+if ($by_image) {
+	$res = $dbi->selectall_arrayref("SELECT images.id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, image_type FROM images$join WHERE $extra GROUP BY images.id ORDER BY $order LIMIT ?, ?;", {}, @bind, $start, $count+1);
+} else {
+	$res = $dbi->selectall_arrayref("SELECT images.id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, url, irc_lines.nick, irc_lines.channel, irc_lines.time, image_type FROM images INNER JOIN image_postings ON images.id = image_postings.image_id INNER JOIN irc_lines ON irc_lines.id = image_postings.line_id$join WHERE $extra GROUP BY images.id ORDER BY $order LIMIT ?, ?;", {}, @bind, $start, $count+1);
+}
 
-my $nav = '';
+my $nav = '<p><a href="/">Top</a>';
 my @p = $q->param();
 my %params;
 for($q->param) {
@@ -59,18 +86,23 @@ $qs =~ s/#/%23/g;
 if ($start != 0) {
 	my $ns  = $start - $count;
 	$ns = 0 if $ns < 0;
-	$nav .= qq#<p><a href="?$qs">Top</a> | <a href="?$qs&amp;skip=$ns">Newer</a>#;
+	$nav .= qq# | <a href="?$qs">Top</a> | <a href="?$qs&amp;skip=$ns">Newer</a>#;
 }
-if ($start != 0) {
-	$nav .= " | ";
-} else {
-	$nav .= "<p>";
-}
+$nav .= " | ";
 if ($count < @$res) {
 	my $ns  = $start + $count;
 	$nav .= qq#<a href="?$qs&amp;skip=$ns">Older</a> #;
 }
-$nav .= qq|<a href="tags">Tags</a></p>|;
+$nav .= qq| \| <a href="tags">Tags</a>|;
+if ($start == 0) {
+	$nav .= " | ";
+	$nav .= qq|[<a href="?delq=1">Deletion queue</a>]|;
+	$nav .= " | ";
+	$nav .= qq|[<a href="?has_tag=1">Tagged</a>]|;
+	$nav .= " | ";
+	$nav .= qq|[<a href="?min_area=1000000">Huge</a>]|;
+}
+$nav .= "</p>";
 
 if (grep { lc $_ eq 'application/xhtml+xml' } split /\s*[,;]\s*/, $ENV{HTTP_ACCEPT}) {
 	print $q->header('application/xhtml+xml');
@@ -91,6 +123,13 @@ print <<END;
 <head><meta name="Content-Type" value="application/xhtml+xml"/><title>Index</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body>
 END
 print $nav;
+print qq|<p><form method="post">Search URL: <input type="text" name="url"/></form></p>|;
+for(@flags) {
+	if ($_ eq 'deletion_info') {
+		my $inf = $dbi->selectall_arrayref("SELECT SUM(thumbnail_size) + SUM(size) FROM images");
+		print "<p>Repo status: ".sprintf("%0.2f",$inf->[0][0]/1024/1024/1024)."GiB of 5GiB used; ".sprintf("%0.1f",100*$inf->[0][0]/1024/1024/1024/5)."% full. +ve rated and tagged images will not be automatically deleted. Viewing an image moves it further from deletion, so if you view it and it sucks, downrate it.</p>";
+	}
+}
 print qq|<div class="g">|;
 my $number = $count > @$res ? @$res : $count;
 for(@$res[0..$number-1]) {
@@ -105,18 +144,21 @@ for(@$res[0..$number-1]) {
 	my $chan = $_->[7] ? qq|<a href="?chan=$uchan">$_->[7]</a>| : 'privmsg';
 	my $extra = '';
 	my $local_url = "image?i=$_->[0]";
-	if ($_->[9] eq 'animated') {
+	my $type = $by_image ? $_->[5] : $_->[9];
+	if ($type eq 'animated') {
 		$extra = qq|<img src="media/trans.gif" style="width:12px;height:$_->[4]px;background:url(media/moviereel.png);"/>|;
-	} elsif ($_->[9] eq 'nicovideo') {
+	} elsif ($type eq 'nicovideo') {
 		$extra = qq|<img src="media/trans.gif" style="width:16px;height:$_->[4]px;background:url(media/niconico.png);"/>|;
-	} elsif ($_->[9] eq 'youtube') {
+	} elsif ($type eq 'youtube') {
 		$extra = qq|<img src="media/trans.gif" style="width:16px;height:$_->[4]px;background:url(media/youtube.png);"/>|;
-	} elsif ($_->[9] eq 'html') {
+	} elsif ($type eq 'html') {
 		$extra = qq|<img src="media/trans.gif" style="width:16px;height:$_->[4]px;background:url(media/firefox.png);"/>|;
 	}
-	my $qurl = $q->escapeHTML($_->[5]);
+	my $qurl = $q->escapeHTML($_->[5]||'');
 	my $qdispurl = length $qurl > 25 ? substr($qurl,0,22)."..." : $qurl;
-	print qq|<div><div><a href="$local_url"><div><div>$extra<img$style src="thumbs/$d/$_->[2]"/>$extra</div></div></a><div><div><a href="?nick=$_->[6]">$_->[6]</a> / $chan<br/><a href="$qurl">$qdispurl</a></div></div></div></div> |;
+	print qq|<div><div><a href="$local_url"><div><div>$extra<img$style src="thumbs/$d/$_->[2]"/>$extra</div></div></a>|;
+	print qq|<div><div><a href="?nick=$_->[6]">$_->[6]</a> / $chan<br/><a href="$qurl">$qdispurl</a></div></div>| if !$by_image;
+	print qq|</div></div> |;
 }
 print qq|<div><img src="media/trans.gif" style="width:100%;height:1px;"/></div>|;
 print "</div>";
