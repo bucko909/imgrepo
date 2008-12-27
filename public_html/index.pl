@@ -89,7 +89,7 @@ $qs =~ s/#/%23/g;
 if ($start != 0) {
 	my $ns  = $start - $count;
 	$ns = 0 if $ns < 0;
-	$nav .= qq# | <a href="?$qs">Top</a> | <a href="?$qs&amp;skip=$ns">Newer</a>#;
+	$nav .= qq# | <a href="?$qs">Newest</a> | <a href="?$qs&amp;skip=$ns">Newer</a>#;
 }
 $nav .= " | ";
 if ($count < @$res) {
