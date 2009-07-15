@@ -54,7 +54,7 @@ print <<END;
 	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 
 <html xmlns="http://www.w3.org/1999/xhtml">
-<head><meta name="Content-Type" value="application/xhtml+xml"/><title>Image $image_id</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body id="body">
+<head><meta name="Content-Type" value="application/xhtml+xml"/><title>Image $image_id</title><link rel="stylesheet" type="text/css" href="style.css"/><link rel="icon" type="image/png" href="media/favicon.png"/></head><body id="body">
 END
 print qq|<div class="m" id="main">|;
 if ($res->[0][5] eq 'youtube') {
@@ -117,8 +117,9 @@ END
 print qq|<div class="i">|;
 print qq|<p>Viewed $res->[0][6] times. <span id="rating"></span></p>|;
 print qq|<p>Tags: <span id="tags"></span></p>|;
-print qq|<div id="editlink"><a href="#" id="editlinklink">Edit</a></div>|;
-print qq|<div id="editor" style="display: none;"><p><form id="tagform"><input type="text" id="tagbox" size="80" autocomplete="off"/> <input type="submit" id="tagsubmitbutton" value="Add Tags"/><input type="hidden" id="imageid" value="$res->[0][0]"/></form></p><div id="statmsg"/><div id="autocomplete"/></div>|;
+my $approve = $q->is_admin ? qq( | <a href="tag_submit.pl?tag=approved:private&amp;img=$image_id">Approve</a> | <a href="tag_submit.pl?tag=delete_me:private&amp;img=$image_id">Delete</a>) : "";
+print qq|<div id="editlink"><a href="#" id="editlinklink">Edit</a>$approve</div>|;
+print qq|<div id="editor" style="display: none;"><p><form id="tagform"><input type="text" id="tagbox" size="80" autocomplete="off"/> <input type="submit" id="tagsubmitbutton" value="Add Tags"/><input type="hidden" id="imageid" value="$res->[0][0]"/></form></p><div id="statmsg"/><div id="autocomplete"/><p>The only acceptable tagged porn is tagged nsfw and what. <b>Anything else will just result in a faster deletion.</b></p></div>|;
 print qq|<script language="javascript" src="media/tagedit.js"/>|;
 print "</div><br/>";
 print qq|<div class="i">|;
@@ -132,7 +133,7 @@ for my $post (@$posts) {
 	$uchan =~ s/#/%23/g;
 	my @ltext = (qq|In |.($postline->[0][3] ? qq|<a href="/?chan=$uchan">$postline->[0][3]</a>| : "private message").qq| on |.strftime("%a %b %d %Y", localtime $lines[0][1]).qq|:|);
 	for (@lines) {
-		my $qurl = quotemeta $post->[0];
+		my $qurl = quotemeta $q->escapeHTML($post->[0]);
 		my $text = $q->escapeHTML($_->[4]);
 		$text =~ s#[^ -~]#?#g;
 		$text =~ s#(http://\S+)#<a href="$1">$1</a>#g;

@@ -46,6 +46,10 @@ div.g div div {
 /*	border: 1px solid white;*/
 	background: #FAA;
 }
+img.areaind {
+	width:4px;
+	background: #B88;
+}
 div.g div div a {
 	line-height: 0;
 	padding: 0;

@@ -44,6 +44,7 @@ sub register {
 		irc_001    => sub { goto &{'Repo::Hooks::on_001'} },
 		irc_433    => sub { goto &{'Repo::Hooks::on_nickinuse'} },
 		irc_public => sub { goto &{'Repo::Hooks::on_public'} },
+		irc_ctcp_action => sub { goto &{'Repo::Hooks::on_public'} },
 		irc_msg => sub { goto &{'Repo::Hooks::on_private'} },
 		irc_disconnected => sub { goto &{'Repo::Hooks::on_disconnect'} },
 		irc_pong => sub { goto &{'Repo::Hooks::on_pong'} },

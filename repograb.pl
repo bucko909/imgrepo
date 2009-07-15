@@ -11,12 +11,13 @@ require 'grabhooks.pl';
 while(1) {
 	if (!deal_with_entry($dbi)) {
 		sleep 5;
+		if (!$dbi->ping) {
+			$dbi = get_dbi();
+		}
 	}
 }
 
 sub get_dbi {
-	return $_[0]->{dbi} if exists $_[0]->{dbi};
-
 	open MYCNF, "$ENV{HOME}/.my.cnf";
 	local $/;
 	my $contents = <MYCNF>;

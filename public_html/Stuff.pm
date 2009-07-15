@@ -48,12 +48,16 @@ sub header {
 	}
 }
 
+sub is_admin {
+	return $_[0]->{admin};
+}
+
 sub get_session {
 	my ($this, $generate_new) = @_;
 	my $sess_id;
 	if ($sess_id = $this->cookie('session')) {
 		# Session appears to exist. Check it's valid.
-		my $start_time = $this->{bucko_dbi}->selectall_arrayref("SELECT start_time FROM sessions WHERE id = ?", {}, $sess_id);
+		my $start_time = $this->{bucko_dbi}->selectall_arrayref("SELECT start_time, admin FROM sessions WHERE id = ?", {}, $sess_id);
 		if ($start_time && @$start_time) {
 			if ($start_time->[0][0] + 3600*6 < time()) {
 				# Expire votes etc.
@@ -63,6 +67,7 @@ sub get_session {
 				$this->{bucko_dbi}->do("DELETE FROM sessions WHERE start_time < ?", {}, time() - 3600*8);
 			}
 			$this->{bucko_sess} = $sess_id;
+			$this->{admin} = $start_time->[0][1];
 			return $sess_id;
 		}
 	}

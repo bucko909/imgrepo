@@ -1,15 +1,16 @@
 #!/usr/bin/perl
 
 use Stuff;
-use CGI;
 use strict;
 use warnings;
 
 print "Content-Type: text/plain; charset=ISO-8859-1\n";
 print "Expires: Thu, 01 Jan 1970 00:00:00 GMT\n\n";
 
-my $q = CGI->new;
 my $dbi = Stuff->get_dbi;
+my $q = MyCGI->new($dbi);
+$q->get_session(1);
+my $ad = $q->is_admin;
 my @tags = $q->param('tag');
 my $image = $q->param('img');
 my $image_result = $dbi->selectall_arrayref("SELECT id FROM images WHERE id=?", {}, $image);
@@ -27,7 +28,17 @@ my %types = (
 	content => 1,
 	artist => 1,
 	other => 1,
+	private => 1,
 );
+if ($ad) {
+	my @res = grep { $_ eq 'delete_me' || $_ eq 'delete_me:private' || $_ eq 'approved' || $_ eq 'approved:private' } @tags;
+	if (!@res) {
+		my $image_tagged = $dbi->selectall_arrayref("SELECT tag_id FROM image_tags WHERE image_id = ? AND (tag_id = 4 OR tag_id = 840)", {}, $image_id);
+		if (!@$image_tagged) {
+			push @tags, 'approved:private';
+		}
+	}
+}
 for my $tag (@tags) {
 	my ($name, $type) = split /:/, lc $tag;
 	if ($type && !$types{$type}) {
@@ -48,6 +59,15 @@ for my $tag (@tags) {
 		}
 		$type = $results->[0][0];
 	}
+	if ($type eq 'private' && !$ad) {
+		$failures{private} ||= [];
+		push @{$failures{private}}, $tag;
+		next;
+	} elsif ($type eq 'private') {
+		if ($name eq 'delete_me') {
+			$dbi->do('INSERT INTO upload_queue SET url=CONCAT("delete ", ?)', {}, $image_id);
+		}
+	}
 	my $existing = $dbi->selectall_arrayref("SELECT tags.id FROM tags WHERE tags.name = ? AND tags.type = ?", {}, $name, $type);
 	my $tag_id;
 	if (@$existing) {
@@ -66,7 +86,7 @@ for my $tag (@tags) {
 		push @{$failures{existed}}, "$name:$type";
 		next;
 	} else {
-		$dbi->do("INSERT INTO image_tags SET image_id = ?, tag_id = ?, ip = ?", {}, $image_id, $tag_id, $ENV{REMOTE_ADDR});
+		$dbi->do("INSERT INTO image_tags SET image_id = ?, tag_id = ?, ip = ?, tag_time = ?", {}, $image_id, $tag_id, $ENV{REMOTE_ADDR}, time());
 	}
 	push @success, "$name:$type";
 }
@@ -87,6 +107,8 @@ if (%failures) {
 			print "Tag with ambiguous type:";
 		} elsif ($_ eq 'existed') {
 			print "Tags which the image already had:";
+		} elsif ($_ eq 'private') {
+			print "Tags which can only be added by admin:";
 		}
 		for(@{$failures{$_}}) {
 			print " $_";

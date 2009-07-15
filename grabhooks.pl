@@ -25,11 +25,27 @@ sub deal_with_entry {
 	my $imgurl;
 	my $referer_url;
 	my $image_type = 'image';
+	my $old_id;
+	if ($url =~ m/^reget (\d+)(?::(\d+))?$/) {
+		$old_id = $1;
+		my $bits;
+		if ($2) {
+			$bits = $dbi->selectall_arrayref("SELECT url FROM image_postings WHERE image_id = ? AND line_id = ?", {}, $old_id, $2);
+		} else {
+			$bits = $dbi->selectall_arrayref("SELECT url FROM image_postings WHERE image_id = ?", {}, $old_id);
+		}
+		if (!@$bits) {
+			print "Image did not exist/missing URL: $url\n";
+			return 1;
+		}
+		print "Regetting ($url)\n";
+		$url = $bits->[0][0];
+	}
 	if ($url eq 'reload') {
 		print "Reloading.\n";
 		do 'grabhooks.pl';
 		return 1;
-	} elsif ($url =~ m#^delete (\d+)$#) {
+	} elsif ($url =~ m/^delete (\d+)$/) {
 		my $image_id = $1;
 		my $res = $dbi->selectall_arrayref("SELECT images.id, local_filename, local_thumbname FROM images WHERE images.id = ?", {}, $image_id);
 		if (!$res || !@$res) {
@@ -103,11 +119,24 @@ sub deal_with_entry {
 			print "Parse failure.\n";
 			return 1;
 		}
+	} elsif ($url =~ m#^http://(?:www\.)?gelbooru.com/index.php.*page=post#) {
+		print "Mangling gelbooru URL $url.\n";
+		my $resp = $ua->get($url,
+			Referer => "http://www.gelbooru.com/",
+		);
+		$referer_url = $url;
+		if ($resp->content =~ m#src="(http://(?:.*?)gelbooru\.com/images/.*?)"#) {
+			$imgurl = $1;
+			print "OK; I think I need $imgurl.\n";
+		} else {
+			print "Parse failure.\n";
+			return 1;
+		}
 	} elsif ($url =~ m#^http://\S+\.pixiv.net/img/\S+/\d+\.\w+$#) {
 		print "Setting pixiv referer for URL $url\n";
 		$referer_url = "http://www.pixiv.net/member_illust.php";
 		$imgurl = $url;
-	} elsif ($url =~ m#http://www.pixiv.net/member_illust.php\?mode=(?:medium|big)&illust_id=(\d+)#) {
+	} elsif ($url =~ m#http://www.pixiv.net/(?:member_illust|index).php\?mode=(?:medium|big)&illust_id=(\d+)#) {
 		print "Mangling pixiv URL $url\n";
 		my $resp = $ua->get($url,
 			Referer => 'http://www.pixiv.net/',
@@ -224,6 +253,8 @@ sub deal_with_entry {
 				sleep 1;
 				$fn = </home/repo/Desktop/*.png>;
 			}
+			print "It's time for a killin'.\n";
+			print "Image: $fn\n" if $fn;
 			system("killall", "Xvfb");
 			if ($fn) {
 				# Success
@@ -307,9 +338,20 @@ sub deal_with_entry {
 		my $imagesize = $s[7];
 		$dbi->do("INSERT INTO images (local_filename, local_thumbname, md5sum, image_width, image_height, size, thumbnail_width, thumbnail_height, thumbnail_size, image_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", {}, $fn, $thumbfn, $sum, $width, $height, $imagesize, $pwidth, $pheight, $thumbsize, $image_type);
 		my $image_id = $dbi->last_insert_id(undef, undef, undef, undef);
-		$dbi->do("INSERT INTO image_postings (image_id, line_id, url) VALUES (?, ?, ?)", {}, $image_id, $line_id, $url);
-		print "$url successful (image number $image_id).\n";
-		cull_images($dbi);
+		if (!$old_id) {
+			$dbi->do("INSERT INTO image_postings (image_id, line_id, url) VALUES (?, ?, ?)", {}, $image_id, $line_id, $url);
+			print "$url successful (image number $image_id).\n";
+			cull_images($dbi);
+		} else {
+			$dbi->do("INSERT INTO image_postings (image_id, line_id, url) SELECT ?, line_id, url FROM image_postings WHERE image_id = ?", {}, $image_id, $old_id);
+			my $res = $dbi->selectall_arrayref("SELECT images.id, local_filename, local_thumbname FROM images WHERE images.id = ?", {}, $old_id);
+			if (!$res || !@$res) {
+				print "Bad image number $old_id (replaced with $image_id).\n";
+			} else {
+				print "Deleting image number $old_id (replaced with $image_id).\n";
+				remove_image($dbi, @{$res->[0]});
+			}
+		}
 		return 1;
 	} else {
 		unlink($temp_file);
@@ -323,11 +365,12 @@ sub cull_images {
 	my $total = $dbi->selectall_arrayref("SELECT SUM(thumbnail_size) + SUM(size) FROM images")->[0][0];
 	printf("Total space used: %0.2fGiB\n", $total/1024/1024/1024);
 	if ($total > 5 * 1024 * 1024 * 1024) {
+		my $first_id = $dbi->selectall_arrayref("SELECT MAX(id) FROM images")->[0][0] - 2000;
 		my $remain = $total - 5 * 1024*1024*1024;
 		print "It's cullin' time ($remain bytes to go).\n";
 		#my $sth = $dbi->prepare("SELECT images.id, size + thumbnail_size, local_filename, local_thumbname FROM images INNER JOIN image_tags ON images.id = image_tags.image_id INNER JOIN tags ON tags.id = image_tags.tag_id WHERE tags.name = 'delete_me' AND images.rating < 0");
-		my $sth = $dbi->prepare("SELECT images.id, size + thumbnail_size, local_filename, local_thumbname FROM images LEFT OUTER JOIN image_tags tdt ON tdt.image_id = images.id AND tdt.tag_id != 4 WHERE tdt.tag_id IS NULL AND images.rating <= 0 GROUP BY images.id ORDER BY (images.id + images.rating*10000 + images.fullviews*1000)/(images.thumbnail_size + images.size)");
-		$sth->execute;
+		my $sth = $dbi->prepare("SELECT images.id, size + thumbnail_size, local_filename, local_thumbname FROM images LEFT OUTER JOIN image_tags tdt ON tdt.image_id = images.id AND tdt.tag_id != 4 WHERE images.id < ? AND tdt.tag_id IS NULL AND images.rating <= 0 GROUP BY images.id ORDER BY (images.id + images.rating*10000 + images.fullviews*1000)/(images.thumbnail_size + images.size)");
+		$sth->execute($first_id);
 		my $row;
 		my $removed = 0;
 		while($remain > 0 && ($row = $sth->fetchrow_arrayref)) {

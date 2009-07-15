@@ -25,7 +25,7 @@ POE::Session->create(
 	heap => {
 		IRC => $irc1,
 		SERVER => 'irc.uwcs.co.uk',
-		CHANNELS => '#compsoc,#goatse',
+		CHANNELS => '#compsoc,#goatse,#anime',
 	},
 );
 

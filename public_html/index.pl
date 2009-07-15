@@ -10,13 +10,16 @@ my $dbi = get_dbi();
 my $q = MyCGI->new($dbi);
 my $sess_id = $q->get_session(1);
 
-my ($extra, $join, @bind) = ("1", "");
-my $order = "irc_lines.time DESC, images.id DESC";
+my ($extra, $join, @joinbind, @bind) = ("1", "");
+my $order = "MAX(irc_lines.time) DESC, images.id DESC";
 my @flags;
 my $by_image = 0;
 if (my $chan = $q->param('chan')) {
 	$extra .= " AND channel = ?";
 	push @bind, $chan;
+} elsif ($ENV{SERVER_NAME} =~ /disillusionment/) {
+	$extra .= " AND channel = ?";
+	push @bind, "#compsoc";
 }
 if (my $nick = $q->param('nick')) {
 	$extra .= " AND nick = ?";
@@ -30,6 +33,9 @@ if (my $type = $q->param('type')) {
 	$extra .= " AND images.image_type = ?";
 	push @bind, $type;
 }
+if (my $val = $q->param('plus_rated')) {
+	$extra .= " AND images.rating > 0";
+}
 if (my $area = $q->param('min_area')) {
 	$extra .= " AND images.image_width * images.image_height >= ?";
 	push @bind, $area;
@@ -40,8 +46,13 @@ if (my $has_tag = $q->param('has_tag')) {
 if (my $by_img  = $q->param('by_image')) {
 	$by_image = 1;
 	$order = "images.id DESC";
+} elsif (my $to_approve = $q->param('approveq')) {
+	$join .= " LEFT OUTER JOIN image_tags tdt ON tdt.image_id = images.id AND (tdt.tag_id = 840 OR tdt.tag_id = 4) LEFT OUTER JOIN image_tags tdt2 ON tdt2.image_id = images.id";
+	$extra .= " AND tdt.tag_id IS NULL AND tdt2.tag_id IS NOT NULL";
+	$order = "(images.id + images.rating*10000 + images.fullviews*1000)/(images.thumbnail_size + images.size)";
+	$by_image = 1;
 } elsif (my $to_delete = $q->param('delq')) {
-	$join .= " LEFT OUTER JOIN image_tags tdt ON tdt.image_id = images.id AND tdt.tag_id != 4";
+	$join .= " LEFT OUTER JOIN image_tags tdt ON tdt.image_id = images.id AND tdt.tag_id = 840";
 	$extra .= " AND tdt.tag_id IS NULL AND images.rating <= 0";
 	$order = "(images.id + images.rating*10000 + images.fullviews*1000)/(images.thumbnail_size + images.size)";
 	push @flags, "deletion_info";
@@ -49,16 +60,29 @@ if (my $by_img  = $q->param('by_image')) {
 #SELECT images.*, IF(image_tags.tag_id IS NULL,0,1) AS tagtot FROM images LEFT OUTER JOIN image_tags ON images.id = image_tags.image_id AND image_tags.tag_id != 4 WHERE rating <= 0 AND image_tags.tag_id IS NULL GROUP BY images.id ORDER BY (images.id + fullviews*1000)/(thumbnail_size + size);
 }
 if (my @tags = $q->param('tag')) {
-	$extra .= " AND (0";
-	$join .= " INNER JOIN image_tags ON image_tags.image_id = images.id INNER JOIN tags ON tags.id = image_tags.tag_id";
+	$extra .= " AND (1";
+	my $c = 0;
 	for(@tags) {
+		my $not = s/^-//;
+		my $cond;
+		my @b;
 		if (/(.*):(.*)/) {
-			$extra .= " OR (tags.name = ? AND tags.type = ?)";
-			push @bind, ($1, $2);
+			$cond = "tt$c.name = ? AND tt$c.type = ?";
+			@b = ($1, $2);
 		} else {
-			$extra .= " OR tags.name = ?";
-			push @bind, $_;
+			$cond = "tt$c.name = ?";
+			@b = ($_);
 		}
+		if ($not) {
+			$join .= " INNER JOIN tags tt$c ON $cond LEFT OUTER JOIN image_tags it$c ON it$c.image_id = images.id AND tt$c.id = it$c.tag_id";
+			$extra .= " AND it$c.tag_id IS NULL";
+			push @joinbind, @b;
+		} else {
+			$join .= " INNER JOIN image_tags it$c ON it$c.image_id = images.id INNER JOIN tags tt$c ON tt$c.id = it$c.tag_id";
+			$extra .= " AND $cond";
+			push @bind, @b;
+		}
+		$c++;
 	}
 	$extra .= ")";
 }
@@ -71,13 +95,20 @@ if (my $skip = $q->param('skip')) {
 }
 
 my $res;
+$res = $dbi->selectall_arrayref("SELECT AVG(size), AVG(image_width)*AVG(image_height) FROM images WHERE image_type != 'html' && image_width < 3000 && image_height < 3000;");
+our ($avgsize, $avgarea) = @{$res->[0]};
 if ($by_image) {
-	$res = $dbi->selectall_arrayref("SELECT images.id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, image_type FROM images$join WHERE $extra GROUP BY images.id ORDER BY $order LIMIT ?, ?;", {}, @bind, $start, $count+1);
+	$res = $dbi->selectall_arrayref("SELECT images.id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, image_type, image_height * image_width, size FROM images$join WHERE $extra GROUP BY images.id ORDER BY $order LIMIT ?, ?;", {}, @joinbind, @bind, $start, $count+1);
 } else {
-	$res = $dbi->selectall_arrayref("SELECT images.id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, url, irc_lines.nick, irc_lines.channel, irc_lines.time, image_type FROM images INNER JOIN image_postings ON images.id = image_postings.image_id INNER JOIN irc_lines ON irc_lines.id = image_postings.line_id$join WHERE $extra GROUP BY images.id ORDER BY $order LIMIT ?, ?;", {}, @bind, $start, $count+1);
+	$res = $dbi->selectall_arrayref("SELECT images.id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, url, irc_lines.nick, irc_lines.channel, irc_lines.time, image_type, image_height * image_width, size FROM images INNER JOIN image_postings ON images.id = image_postings.image_id INNER JOIN irc_lines ON irc_lines.id = image_postings.line_id$join WHERE $extra GROUP BY irc_lines.id, images.id ORDER BY $order LIMIT ?, ?;", {}, @joinbind, @bind, $start, $count+1);
 }
 
-my $nav = '<p><a href="/">Top</a>';
+my $nav = '<p>';
+if ($q->is_admin) {
+	$nav .= "(Id) | ";
+}
+
+$nav .= '<a href="/">Top</a>';
 my @p = $q->param();
 my %params;
 for($q->param) {
@@ -123,14 +154,17 @@ print <<END;
 	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 
 <html xmlns="http://www.w3.org/1999/xhtml">
-<head><meta name="Content-Type" value="application/xhtml+xml"/><title>Index</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body>
+<head><meta name="Content-Type" value="application/xhtml+xml"/><title>Index</title><link rel="stylesheet" type="text/css" href="style.css"/><link rel="icon" type="image/png" href="media/favicon.png"/></head><body>
 END
+
 print $nav;
-print qq|<p><form method="post">Search URL: <input type="text" name="url"/></form></p>|;
+print qq|<form method="post"><p>Search URL: <input type="text" name="url"/> \| [bar on left measures file size; right is area]</p></form>|;
 for(@flags) {
 	if ($_ eq 'deletion_info') {
-		my $inf = $dbi->selectall_arrayref("SELECT SUM(thumbnail_size) + SUM(size) FROM images");
-		print "<p>Repo status: ".sprintf("%0.2f",$inf->[0][0]/1024/1024/1024)."GiB of 5GiB used; ".sprintf("%0.1f",100*$inf->[0][0]/1024/1024/1024/5)."% full. +ve rated and tagged images will not be automatically deleted. Viewing an image moves it further from deletion, so if you view it and it sucks, downrate it.</p>";
+		my $inf = $dbi->selectall_arrayref("SELECT SUM(thumbnail_size) + SUM(size), COUNT(*) FROM images");
+		my $saved = $dbi->selectall_arrayref("SELECT SUM(size) + SUM(thumbnail_size), COUNT(*) FROM images INNER JOIN image_tags ON images.id = image_tags.image_id AND image_tags.tag_id = 840");
+		#print "<p>Repo status: ".sprintf("%0.2f",5*1024*1024*1024-$inf->[0][0]/1024/1024/1024)."GiB of 5GiB used; ".sprintf("%0.1f",100*$inf->[0][0]/1024/1024/1024/5)."% full. +ve rated and tagged images will not be automatically deleted. Viewing an image moves it further from deletion, so if you view it and it sucks, downrate it.</p>";
+		print "<p>Repo status: ".sprintf("%0.2f",(5*1024*1024*1024-$inf->[0][0])/1024/1024)."MiB of 5GiB free (".sprintf("%0.2f",($saved->[0][0])/1024/1024/1024)."GiB of which is saved - that's $saved->[0][1]/$inf->[0][1] images). +ve rated and approved images will not be automatically deleted. Viewing an image moves it further from deletion, so if you view it and it sucks, downrate it. Recent (top 1000 or so) images are never deleted.</p>";
 	}
 }
 print qq|<div class="g">|;
@@ -148,6 +182,16 @@ for(@$res[0..$number-1]) {
 	my $extra = '';
 	my $local_url = "image?i=$_->[0]";
 	my $type = $by_image ? $_->[5] : $_->[9];
+	my $area = $by_image ? $_->[6] : $_->[10];
+	my $size = $by_image ? $_->[7] : $_->[11];
+	my $relarea = 1 - (1 / sqrt($area/$avgarea+1));
+	my $relsize = 1 - (1 / sqrt($size/$avgsize+1));
+	$relarea = 0.1 if $relarea < 0.1;
+	$relsize = 0.1 if $relsize < 0.1;
+	$relarea = int($relarea*$_->[4]);
+	$relsize = int($relsize*$_->[4]);
+	my $areaind = qq|<img src="media/trans.gif" class="areaind" style="height:${relarea}px;"/>|;
+	my $sizeind = qq|<img src="media/trans.gif" class="areaind" style="height:${relsize}px;"/>|;
 	if ($type eq 'animated') {
 		$extra = qq|<img src="media/trans.gif" style="width:12px;height:$_->[4]px;background:url(media/moviereel.png);"/>|;
 	} elsif ($type eq 'nicovideo') {
@@ -158,8 +202,9 @@ for(@$res[0..$number-1]) {
 		$extra = qq|<img src="media/trans.gif" style="width:16px;height:$_->[4]px;background:url(media/firefox.png);"/>|;
 	}
 	my $qurl = $q->escapeHTML($_->[5]||'');
-	my $qdispurl = length $qurl > 25 ? substr($qurl,0,22)."..." : $qurl;
-	print qq|<div><div><a href="$local_url"><div><div>$extra<img$style src="thumbs/$d/$_->[2]"/>$extra</div></div></a>|;
+	my $dispurl = $_->[5] ? (length $_->[5] > 25 ? substr($_->[5],0,22)."..." : $_->[5]) : '';
+	my $qdispurl = $q->escapeHTML($dispurl);
+	print qq|<div><div><a href="$local_url"><div><div>$sizeind$extra<img$style src="thumbs/$d/$_->[2]"/>$extra$areaind</div></div></a>|;
 	print qq|<div><div><a href="?nick=$_->[6]">$_->[6]</a> / $chan<br/><a href="$qurl">$qdispurl</a></div></div>| if !$by_image;
 	print qq|</div></div> |;
 }
