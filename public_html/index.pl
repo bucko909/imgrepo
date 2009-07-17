@@ -6,7 +6,7 @@ use POSIX qw/strftime/;
 use strict;
 use warnings;
 
-my $dbi = get_dbi();
+my $dbi = Stuff::get_dbi();
 my $q = MyCGI->new($dbi);
 my $sess_id = $q->get_session(1);
 
@@ -212,24 +212,3 @@ print qq|<div><img src="media/trans.gif" style="width:100%;height:1px;"/></div>|
 print "</div>";
 print $nav;
 print $q->end_html;
-
-
-sub get_dbi {
-	return $_[0]->{dbi} if exists $_[0]->{dbi};
-
-	$ENV{HOME} ||= '/home/repo';
-	open MYCNF, "$ENV{HOME}/.my.cnf";
-	local $/;
-	my $contents = <MYCNF>;
-	close MYCNF;
-	my ($user, $database, $password);
-	$user = $1 if $contents =~ /user = (.*)/;
-	$database = $1 if $contents =~ /database = (.*)/;
-	$password = $1 if $contents =~ /password = (.*)/;
-
-	if (!$user || !$database || !$password) {
-		die("Sorry, the .my.cnf file appears to be corrupt");
-	}
-
-	return DBI->connect("dbi:mysql:database=$database", $user, $password);
-}

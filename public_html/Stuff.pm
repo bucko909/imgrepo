@@ -7,7 +7,7 @@ use DBI;
 
 sub get_dbi {
 	$ENV{HOME} ||= '/home/repo';
-	open MYCNF, "$ENV{HOME}/.my.cnf";
+	open MYCNF, "$ENV{HOME}/.my.cnf" or die "Could not open my.cnf file ($!)";
 	local $/;
 	my $contents = <MYCNF>;
 	close MYCNF;
