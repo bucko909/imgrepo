@@ -64,6 +64,7 @@ sub register {
 sub on_socketerr {
 	my ($kernel, $heap, $session, $arg) = @_[ KERNEL, HEAP, SESSION, ARG0 ];
 	print "Socket error: $arg\n";
+	goto &on_disconnect;
 }
 
 sub on_raw {
@@ -199,7 +200,7 @@ sub process_public {
 		}
 		return;
 	}
-	while ($msg =~ m#(http://\S+)#cg) {
+	while ($msg =~ m#(https?://\S+)#cg) {
 		print "URL: $1\n";
 		$dbi->do("INSERT INTO upload_queue(url, line_id) VALUES(?, ?)", {}, $1, $line_id);
 	}

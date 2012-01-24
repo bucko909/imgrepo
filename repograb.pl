@@ -14,6 +14,8 @@ while(1) {
 		if (!$dbi->ping) {
 			$dbi = get_dbi();
 		}
+	} else {
+		exit
 	}
 }
 

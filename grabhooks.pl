@@ -19,7 +19,7 @@ sub deal_with_entry {
 	my ($fh, $temp_file) = tempfile( DIR => "$ENV{HOME}/tempstor" );
 	close $fh;
 	my $ua = LWP::UserAgent->new(
-		agent => "Bucko Repository Agent",
+		agent => "Abhor Repository Agent",
 	);
 	$ua->timeout(15);
 	my $imgurl;
@@ -45,6 +45,10 @@ sub deal_with_entry {
 		print "Reloading.\n";
 		do 'grabhooks.pl';
 		return 1;
+	} elsif ($url eq 'cull') {
+		print "Culling.\n";
+		&cull_images($dbi);
+		return 1;
 	} elsif ($url =~ m/^delete (\d+)$/) {
 		my $image_id = $1;
 		my $res = $dbi->selectall_arrayref("SELECT images.id, local_filename, local_thumbname FROM images WHERE images.id = ?", {}, $image_id);
@@ -56,9 +60,48 @@ sub deal_with_entry {
 			print "Done.\n";
 			return 1;
 		}
-	} elsif ($url =~ m#^http://[^/]*abhor\.co\.uk/#i) {
-		print "Ignoring self-referential URL $url.\n";
+	} elsif ($url =~ m/^local_move_in (.*?) (.*)/) {
+		$url = $2;
+		rename($1, $temp_file);
+		print "Local upload of $2; renamed $1 -> $temp_file\n";
+		$image_type = 'local';
+	} elsif ($url =~ m#^http://[^/]*(?:abhor|disillusionment)\.co\.uk/.*i=(\d+)#i) {
+		print "Self-referential URL $url to image $1.\n";
+		$old_id = $1;
+		my $res = $dbi->selectall_arrayref("SELECT id FROM images WHERE images.id = ?", {}, $old_id);
+		if (!$res || !@$res) {
+			print "Image doesn't exist.\n";
+			return 1;
+		} else {
+			$dbi->do("INSERT INTO image_postings (image_id, line_id, url) VALUES (?, ?, ?)", {}, $old_id, $line_id, $url);
+			return 1;
+		}
+	} elsif ($url =~ m#^http://[^/]*(?:abhor|disillusionment)\.co\.uk/images/.*/([^/]*)#i) {
+		print "Self-referential URL $url to image $1.\n";
+		my $res = $dbi->selectall_arrayref("SELECT id FROM images WHERE local_filename = ?", {}, $1);
+		if (!$res || !@$res) {
+			print "Image doesn't exist.\n";
+			return 1;
+		} else {
+			$dbi->do("INSERT INTO image_postings (image_id, line_id, url) VALUES (?, ?, ?)", {}, $res->[0][0], $line_id, $url);
+			return 1;
+		}
+	} elsif ($url =~ m#^http://[^/]*(?:abhor|disillusionment)\.co\.uk#i) {
+		print "Unparseable self-referential URL $url.\n";
 		return 1;
+	} elsif ($url =~ m#http://imgur.com/(?:gallery/|[a-z]/(?:[^/]+/)?)?([^./]+)$#) {
+		my $id = $1;
+		print "Mangling imgur URL $url.\n";
+		my $resp = $ua->get($url);
+		if ($resp->content =~ m#<link rel="image_src" href="(http://i.imgur.com/$id\.[^./]+)" /># || $resp->content =~ m#<img src="(http://i.imgur.com/$id\.[^./]+)" />#) {
+			$referer_url = $url;
+			$imgurl = $1;
+			print "OK; I think I need $imgurl.\n";
+		} else {
+			print "Parse failure.\n";
+			print $resp->content;
+			return 1;
+		}
 	} elsif ($url =~ m#^http://(?:www.)nicovideo.jp/watch/..(\d+)#) {
 		$image_type = "nicovideo";
 		$imgurl = "http://tn-skr2.smilevideo.jp/smile?i=$1";
@@ -66,15 +109,19 @@ sub deal_with_entry {
 		$image_type = "youtube";
 		my $vidid = $1;
 		print "Mangling youtube for $url.\n";
-		my $resp = $ua->get("http://www.youtube.com/results?search_query=$vidid",
+		my $resp = $ua->get("http://www.youtube.com/results?search_query=\"$vidid\"",
 			Referer => 'http://www.youtube.com/',
 		);
-		$referer_url = "http://www.youtube.com/results?search_query=$vidid";
+		$referer_url = "http://www.youtube.com/results?search_query=\"$vidid\"";
 		my $qvidid = quotemeta $vidid;
-		if ($resp->content =~ m#(http://[^/]*.ytimg.com/vi/$qvidid/[^"]*)#) {
+		if ($resp->content =~ m#((?:http:)?//[^/]*.ytimg.com/vi/$qvidid/[^"]*)#) {
 			$imgurl = $1;
+			if ($imgurl !~ /^http:/) {
+				$imgurl ="http:$imgurl";
+			}
 			print "Youtube: Preview image seems to be at $imgurl\n";
 		} else {
+			print $resp->content;
 			print "Youtube: Failed to find preview for $url\n";
 			return 1;
 		}
@@ -119,13 +166,42 @@ sub deal_with_entry {
 			print "Parse failure.\n";
 			return 1;
 		}
+	} elsif ($url =~ m#^http://(?:www\.)?fukung.net/#) {
+		print "Mangling fukung URL $url.\n";
+		my $resp = $ua->get($url,
+			Referer => "http://fukung.net/",
+		);
+		$referer_url = $url;
+		if ($resp->content =~ m#src="(http://media.fukung.net/images/[^"]+)"#) {
+			$imgurl = $1;
+			print "OK; I think I need $imgurl.\n";
+		} else {
+			print "Parse failure.\n";
+			return 1;
+		}
+	} elsif ($url =~ m#^http://(?:www\.)?moid.org/banme#) {
+		print "Fail url $url.\n";
+		return 1;
+	} elsif ($url =~ m#^http://(?:www\.)?moid.org/ed/#) {
+		print "Mangling moid URL $url.\n";
+		my $resp = $ua->get($url,
+			Referer => "http://www.moid.org/",
+		);
+		$referer_url = $url;
+		if ($resp->content =~ m#src="(/ed/images/.*?)"#) {
+			$imgurl = "http://www.moid.org$1";
+			print "OK; I think I need $imgurl.\n";
+		} else {
+			print "Parse failure.\n";
+			return 1;
+		}
 	} elsif ($url =~ m#^http://(?:www\.)?gelbooru.com/index.php.*page=post#) {
 		print "Mangling gelbooru URL $url.\n";
 		my $resp = $ua->get($url,
 			Referer => "http://www.gelbooru.com/",
 		);
 		$referer_url = $url;
-		if ($resp->content =~ m#src="(http://(?:.*?)gelbooru\.com/images/.*?)"#) {
+		if ($resp->content =~ m#src="(http://(?:.*?)gelbooru\.com/+images/+.*?)"#) {
 			$imgurl = $1;
 			print "OK; I think I need $imgurl.\n";
 		} else {
@@ -166,52 +242,77 @@ sub deal_with_entry {
 	} else {
 		$imgurl = $url;
 		$referer_url = $url;
-		$referer_url =~ s#/[^/]*$#/#;
+		$referer_url =~ s/\/[^\/]*$/\//;
 	}
 	# Image (we hope)
 
-	$ua->max_size(25*1024*1024*1024); # 25 megs max size for now.
-
 	my $resp;
-	my $tries = 0;
-	while ($tries++ < 5) {
-		print "Get $imgurl.\n";
-		$resp = $ua->get($imgurl,
-			Referer => $referer_url,
-			':content_file' => $temp_file,
-		);
-		if (!$resp->is_success) {
-			print "$url failed to fetch: ".$resp->code.": ".$resp->message.".\n";
-			if ($tries < 5) {
-				print "Retrying in 5 secs.\n";
-				sleep 5;
+	if ($image_type ne 'local') {
+		$ua->max_size(25*1024*1024*1024); # 25 megs max size for now.
+
+		my $tries = 0;
+		while ($tries++ < 5) {
+			print "Get $imgurl.\n";
+			$resp = $ua->get($imgurl,
+				Referer => $referer_url,
+				':content_file' => $temp_file,
+			);
+			if (!$resp->is_success && (!$resp->header('Content-Length') || $resp->header('Content-Length') == (stat($temp_file))[7])) {
+				print "$url failed to fetch: ".$resp->code.": ".$resp->message.".\n";
+				if ($tries < 5) {
+					print "Retrying in 5 secs.\n";
+					sleep 5;
+				}
+			} else {
+				last;
 			}
-		} else {
-			last;
 		}
+		print "Size: ".$resp->header('Content-Length')."\n";
+	} else {
+		print "Local upload; skipping fetch phase.\n";
 	}
-	if ($resp->is_success) {
+	if ($image_type eq 'local' || $resp->is_success) {
 		chmod 0644, $temp_file;
 		open(SUM, "md5sum $temp_file|");
 		my $sum = <SUM>;
 		$sum =~ s/\s.*//s;
 		close SUM;
-		$res = $dbi->selectall_arrayref("SELECT id, local_filename FROM images WHERE md5sum=?", {}, $sum);
+		$res = $dbi->selectall_arrayref("SELECT id, local_filename, local_thumbname FROM images WHERE md5sum=?", {}, $sum);
 		my $count = @$res;
 		if ($count) {
 			# image may be duplicate; let's check.
 			for (@$res) {
 				my $img_oid = $_->[0];
 				my $ofn = $_->[1];
+				my $tfb = $_->[2];
 				$ofn =~ s#^(.)(.)#$1/$2/$1$2#;
 
 				# Ensure we don't stupidly collide when images are deleted.
 				$_->[1] =~ /-(\d+)/;
 				$count = $1 if $1 > $count;
 
-				if (!system("diff", $temp_file, "$images/$ofn")) {
-					print "$url is a duplicate of $ofn; skipping.\n";
-					$dbi->do("INSERT INTO image_postings (image_id, line_id, url) VALUES (?, ?, ?)", {}, $img_oid, $line_id, $url);
+				# Assuming missing files match, for now.
+				if ((! -e "$images/$ofn") || !system("diff", $temp_file, "$images/$ofn")) {
+					if ($img_oid == 72350) {
+						print "$url is imgur broken link.\n";
+						return 1;
+					}
+					print "$url is a duplicate of $ofn ($img_oid).\n";
+					if ($old_id) {
+						if ($old_id != $img_oid) {
+							print "Massaging database.\n";
+							$dbi->do("UPDATE image_postings SET image_id = ? WHERE image_id = ?", {}, $img_oid, $old_id);
+							$dbi->do("UPDATE image_tags SET image_id = ? WHERE image_id = ?", {}, $img_oid, $old_id);
+							$dbi->do("UPDATE image_visits SET image_id = ? WHERE image_id = ?", {}, $img_oid, $old_id);
+							$dbi->do("UPDATE rating_raters SET image_id = ? WHERE image_id = ?", {}, $img_oid, $old_id);
+							$dbi->do("UPDATE rating_ratings SET image_id = ? WHERE image_id = ?", {}, $img_oid, $old_id);;
+							$res = $dbi->selectall_arrayref("SELECT local_filename, local_thumbname FROM images WHERE id=?", {}, $old_id);
+							my ($img_file, $thumb_file) = @{$res->[0]};
+							remove_image($dbi, $old_id, $img_file, $thumb_file);
+						}
+					} else {
+						$dbi->do("INSERT INTO image_postings (image_id, line_id, url) VALUES (?, ?, ?)", {}, $img_oid, $line_id, $url);
+					}
 					unlink($temp_file);
 					return 1;
 				}
@@ -220,13 +321,34 @@ sub deal_with_entry {
 
 		$count++;
 
-		my $type = lc $resp->header('Content-Type');
-		if ($imgurl =~ m#^http://.*/_images/.*\.(\w+)# && $type eq 'text/plain') {
+		my $type;
+		if ($image_type eq 'local') {
+			if ($url =~ /jpe?g(?:_.*)?$/i) {
+				$type = 'image/jpeg';
+			} elsif ($url =~ /bmp$/) {
+				$type = 'image/bmp';
+			} elsif ($url =~ /gif$/) {
+				$type = 'image/gif';
+			} elsif ($url =~ /svg$/) {
+				$type = 'image/svg+xml';
+			} elsif ($url =~ /png$/) {
+				$type = 'image/png';
+			} else {
+				$type = ''; # ???
+			}
+		} else {
+			$type = lc $resp->header('Content-Type');
+		}
+		if ($type eq 'text/plain' && $imgurl =~ m#^http://.*/_images/.*\.(\w+)#) {
 			# HACK. Fuck you, R34.
 			my $ext = lc $1;
 			$ext = 'jpeg' if $ext eq 'jpg';
 			$type = 'image/'.$ext;
-		} else {
+		} elsif ($url =~ /imgur.*\.(jpg|png|gif)/ and $type eq 'binary/octet-stream') {
+			my $ext = lc $1;
+			$ext = 'jpeg' if $ext eq 'jpg';
+			$type = 'image/'.$ext;
+		} elsif ($imgurl) {
 			print "$imgurl\n";
 		}
 		$type =~ s/;.*//;
@@ -244,7 +366,8 @@ sub deal_with_entry {
 			mkdir("/home/repo/Desktop");
 			if (!fork) {
 				$dbi->{InactiveDestroy} = 1;
-				system("/home/repo/xvfb-ffcap", "firefox", "-saveimage", $url);
+				print "/home/repo/xvfb-ffcap firefox -width 800 -saveimage $url\n";
+				system("/home/repo/xvfb-ffcap", "firefox", -width => 800, -saveimage => $url);
 				exit;
 			}
 			my $fn;
@@ -304,7 +427,17 @@ sub deal_with_entry {
 			$pheight = $height < 150 ? $height : 150;
 			$pwidth = $width < 150 ? $width : 150;
 			# TODO upgrade PerlMagick so it can do this.
-			system("convert", $imagefile.'[0]', "-thumbnail", $pwidth."x".$pheight."^", "-gravity", "North", "-extent", $pwidth."x".$pheight, "$thumbs/$d1/$d2/$thumbfn");
+			system("convert",
+				$imagefile.'[0]',
+				-cache => 1000000,
+				-depth => 16,
+				-gamma => 0.4545454545,
+				-thumbnail => $pwidth."x".$pheight."^",
+				-gravity => "North",
+				-extent => $pwidth."x".$pheight,
+				-gamma => 2.2,
+				-depth => 8,
+				"$thumbs/$d1/$d2/$thumbfn");
 		} else {
 			if ($width <= $height * 1.5) {
 				$pheight = $height < 150 ? $height : 150;
@@ -319,6 +452,7 @@ sub deal_with_entry {
 				print "$url\'s local filename could not be read.\n";
 				return 1;
 			}
+			$image->Gamma('gamma' => 0.4545454545);
 			print "Length: ".scalar(@$image)."\n";
 			if (@$image > 1) {
 				print "Is animated (".@$image." frames).\n";
@@ -330,6 +464,8 @@ sub deal_with_entry {
 				print "$url could not be thumbnailed.\n";
 				return 1;
 			}
+			$image->Gamma('gamma' => 2.2);
+			$image->Set('Depth' => 8);
 			$image->Write(filename => "$thumbs/$d1/$d2/$thumbfn", compress => 'JPEG');
 		}
 		my @s = stat("$thumbs/$d1/$d2/$thumbfn");
@@ -343,11 +479,15 @@ sub deal_with_entry {
 			print "$url successful (image number $image_id).\n";
 			cull_images($dbi);
 		} else {
-			$dbi->do("INSERT INTO image_postings (image_id, line_id, url) SELECT ?, line_id, url FROM image_postings WHERE image_id = ?", {}, $image_id, $old_id);
 			my $res = $dbi->selectall_arrayref("SELECT images.id, local_filename, local_thumbname FROM images WHERE images.id = ?", {}, $old_id);
 			if (!$res || !@$res) {
 				print "Bad image number $old_id (replaced with $image_id).\n";
 			} else {
+				$dbi->do("UPDATE image_postings SET image_id = ? WHERE image_id = ?", {}, $image_id, $old_id);
+				$dbi->do("UPDATE image_tags SET image_id = ? WHERE image_id = ?", {}, $image_id, $old_id);
+				$dbi->do("UPDATE image_visits SET image_id = ? WHERE image_id = ?", {}, $image_id, $old_id);
+				$dbi->do("UPDATE rating_raters SET image_id = ? WHERE image_id = ?", {}, $image_id, $old_id);
+				$dbi->do("UPDATE rating_ratings SET image_id = ? WHERE image_id = ?", {}, $image_id, $old_id);;
 				print "Deleting image number $old_id (replaced with $image_id).\n";
 				remove_image($dbi, @{$res->[0]});
 			}
@@ -362,21 +502,28 @@ sub deal_with_entry {
 
 sub cull_images {
 	my ($dbi) = @_;
-	my $total = $dbi->selectall_arrayref("SELECT SUM(thumbnail_size) + SUM(size) FROM images")->[0][0];
+	my $total = $dbi->selectall_arrayref("SELECT SUM(thumbnail_size) + SUM(size) FROM images WHERE NOT on_s3")->[0][0];
 	printf("Total space used: %0.2fGiB\n", $total/1024/1024/1024);
 	if ($total > 5 * 1024 * 1024 * 1024) {
-		my $first_id = $dbi->selectall_arrayref("SELECT MAX(id) FROM images")->[0][0] - 2000;
+		my $first_id = $dbi->selectall_arrayref("SELECT MAX(image_id) FROM image_tags INNER JOIN tags ON tags.id = image_tags.tag_id WHERE tags.name = 'approved'")->[0][0];
 		my $remain = $total - 5 * 1024*1024*1024;
 		print "It's cullin' time ($remain bytes to go).\n";
+		print "Tag cutoff is $first_id.\n";
 		#my $sth = $dbi->prepare("SELECT images.id, size + thumbnail_size, local_filename, local_thumbname FROM images INNER JOIN image_tags ON images.id = image_tags.image_id INNER JOIN tags ON tags.id = image_tags.tag_id WHERE tags.name = 'delete_me' AND images.rating < 0");
-		my $sth = $dbi->prepare("SELECT images.id, size + thumbnail_size, local_filename, local_thumbname FROM images LEFT OUTER JOIN image_tags tdt ON tdt.image_id = images.id AND tdt.tag_id != 4 WHERE images.id < ? AND tdt.tag_id IS NULL AND images.rating <= 0 GROUP BY images.id ORDER BY (images.id + images.rating*10000 + images.fullviews*1000)/(images.thumbnail_size + images.size)");
+		my $sth = $dbi->prepare("SELECT images.id, size, thumbnail_size, local_filename, local_thumbname FROM images LEFT OUTER JOIN image_tags tdt ON tdt.image_id = images.id AND tdt.tag_id != 4 WHERE images.id < ? AND tdt.tag_id IS NULL AND images.rating <= 0 AND NOT on_s3 GROUP BY images.id ORDER BY (images.id + images.rating*10000 + images.fullviews*1000)/(images.thumbnail_size + images.size)");
 		$sth->execute($first_id);
 		my $row;
 		my $removed = 0;
 		while($remain > 0 && ($row = $sth->fetchrow_arrayref)) {
-			$remain -= $row->[1];
-			print "Cull $row->[0] ($row->[2]); $row->[1] bytes ($remain left).\n";
-			remove_image($dbi, $row->[0], $row->[2], $row->[3]);
+			print "Cull $row->[0] ($row->[3]); $row->[1] bytes ($remain left).\n";
+			if (system(to_s3 => $row->[0]) == 0) {
+				print "Sent to S3\n";
+				$remain -= $row->[1];
+			} else {
+				print "S3 sync failed\n";
+				#remove_image($dbi, $row->[0], $row->[3], $row->[4]);
+				#$remain -= $row->[1];
+			}
 			$removed++;
 		}
 		print "Total images culled: $removed.\n";
