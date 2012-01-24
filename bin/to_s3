@@ -1,0 +1,29 @@
+#!/bin/sh
+
+id="$1"
+if [ -z "$id" ]; then
+	echo "No ID" >&2
+	exit 1
+fi
+file="$(psql -Atc 'SELECT local_filename FROM images WHERE id='$id' AND NOT on_s3;')"
+if [ -z "$file" ]; then
+	echo "No such ID" >&2
+	exit 1
+fi
+local_name="$(echo "$file"|sed 's|^\(.\)\(.\)|/home/repo/public_html/images/\1/\2/\1\2|')"
+if [ ! -e "$local_name" ]; then
+	echo "No such file" >&2
+	exit 1
+fi
+mime_type="$(file -b --mime-type "$local_name")"
+if [ ! -e "$local_name" ]; then
+	echo "No MIME" >&2
+	exit 1
+fi
+if s3put --http-header='x-amz-storage-class=REDUCED_REDUNDANCY' --mime-type="$mime_type" s3img.abhor.co.uk/"$file" < $local_name; then
+	psql -Atc 'UPDATE images SET on_s3 = TRUE WHERE id='$id';'
+	rm "$local_name"
+else
+	echo "Failed upload" >&2
+	exit 1
+fi

@@ -1,0 +1,42 @@
+#!/bin/sh
+
+case "$SSH_ORIGINAL_COMMAND" in
+	scp*)
+		;;
+	*)
+		printf "Can't login, noob. Command was: $SSH_ORIGINAL_COMMAND\r\n" >&2
+		exit
+		;;
+esac
+cd /home/repo/incoming
+printf '\000'
+while read MODE SIZE NAME; do
+	case "$MODE" in
+		C*)
+			printf '\000'
+			MODE=C0644
+			SIZE16=$(echo $SIZE 16384 / p|dc)
+			SIZEREMAIN=$(echo $SIZE $SIZE16 16384 \* - p|dc)
+			FILENAME=$(basename $(tempfile .))
+
+			if dd of=$FILENAME count=$SIZE16 ibs=16K 2> /dev/null && dd of=$FILENAME oflag=append conv=notrunc count=$SIZEREMAIN ibs=1 2> /dev/null; then
+				dd ibs=1 of=/dev/null count=1 2> /dev/null # null char
+				echo "Uploaded $NAME ($SIZE bytes)" >&2
+				TIME=$(date +%s)
+				NICK=commandline
+				MASK=""
+				QNAME=$(echo "$NAME"|sed 's/[^a-zA-Z0-9_\.-]/_/g')
+				TEXT="$QNAME"
+				LINEID=$(psql -Atc "INSERT INTO irc_lines (time, nick, mask, text) VALUES ($TIME, '$NICK', '$MASK', '$TEXT');")
+				psql -Atc "INSERT INTO upload_queue (url, line_id) VALUES ('local_move_in /home/repo/incoming/$FILENAME $QNAME', $LINEID) RETURNING id;" >&2
+				printf '\000'
+			else
+				rm "$FILENAME"
+				printf '\002Failure!\n'
+			fi
+		;;
+		*) # Ignore D, E and T messages, as we don't care!
+			printf "\000"
+		;;
+	esac
+done

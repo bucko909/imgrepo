@@ -7,14 +7,27 @@ use warnings;
 our $images = "/home/repo/public_html/images";
 our $thumbs = "/home/repo/public_html/thumbs";
 
+sub done {
+	my ($dbi, $id) = @_;
+	$dbi->do("UPDATE upload_queue SET success = TRUE WHERE id = ?", {}, $id);
+	$dbi->commit or die "DB error: $!";
+}
+
+sub err {
+	my ($dbi, $id, $reason) = @_;
+	$dbi->do("UPDATE upload_queue SET success = FALSE, fail_reason = ? WHERE id = ?", {}, $reason, $id);
+	$dbi->commit or die "DB error: $!";
+}
+
 sub deal_with_entry {
 	my ($dbi) = shift;
-	my $res = $dbi->selectall_arrayref("SELECT id, url, line_id FROM upload_queue ORDER BY id ASC LIMIT 1");
+	my $res = $dbi->selectall_arrayref("SELECT id, url, line_id FROM upload_queue WHERE NOT attempted ORDER BY id ASC LIMIT 1");
 	if (!$res || !@$res) {
 		return 0;
 	}
-	my ($id, $url, $line_id) = @{$res->[0]};
-	$dbi->do("DELETE FROM upload_queue WHERE id = ?", {}, $id);
+	my ($upload_id, $url, $line_id) = @{$res->[0]};
+	$dbi->do("UPDATE upload_queue SET attempted = TRUE WHERE id = ?", {}, $upload_id);
+	$dbi->commit or die "DB error: $!";
 
 	my ($fh, $temp_file) = tempfile( DIR => "$ENV{HOME}/tempstor" );
 	close $fh;
@@ -36,6 +49,7 @@ sub deal_with_entry {
 		}
 		if (!@$bits) {
 			print "Image did not exist/missing URL: $url\n";
+			err($dbi, $upload_id, "Image did not exist");
 			return 1;
 		}
 		print "Regetting ($url)\n";
@@ -44,22 +58,26 @@ sub deal_with_entry {
 	if ($url eq 'reload') {
 		print "Reloading.\n";
 		do 'grabhooks.pl';
+		done($dbi, $upload_id);
 		return 1;
 	} elsif ($url eq 'cull') {
 		print "Culling.\n";
 		&cull_images($dbi);
+		done($dbi, $upload_id);
 		return 1;
 	} elsif ($url =~ m/^delete (\d+)$/) {
 		my $image_id = $1;
 		my $res = $dbi->selectall_arrayref("SELECT images.id, local_filename, local_thumbname FROM images WHERE images.id = ?", {}, $image_id);
 		if (!$res || !@$res) {
 			print "Bad image number $image_id.\n";
+			err($dbi, $upload_id, "Bad image number");
 		} else {
 			print "Deleting image number $image_id.\n";
 			remove_image($dbi, @{$res->[0]});
 			print "Done.\n";
-			return 1;
+			done($dbi, $upload_id);
 		}
+		return 1;
 	} elsif ($url =~ m/^local_move_in (.*?) (.*)/) {
 		$url = $2;
 		rename($1, $temp_file);
@@ -71,23 +89,26 @@ sub deal_with_entry {
 		my $res = $dbi->selectall_arrayref("SELECT id FROM images WHERE images.id = ?", {}, $old_id);
 		if (!$res || !@$res) {
 			print "Image doesn't exist.\n";
-			return 1;
+			err($dbi, $upload_id, "Image did not exist");
 		} else {
 			$dbi->do("INSERT INTO image_postings (image_id, line_id, url) VALUES (?, ?, ?)", {}, $old_id, $line_id, $url);
-			return 1;
+			done($dbi, $upload_id);
 		}
+		return 1;
 	} elsif ($url =~ m#^http://[^/]*(?:abhor|disillusionment)\.co\.uk/images/.*/([^/]*)#i) {
 		print "Self-referential URL $url to image $1.\n";
 		my $res = $dbi->selectall_arrayref("SELECT id FROM images WHERE local_filename = ?", {}, $1);
 		if (!$res || !@$res) {
 			print "Image doesn't exist.\n";
-			return 1;
+			err($dbi, $upload_id, "Image did not exist");
 		} else {
 			$dbi->do("INSERT INTO image_postings (image_id, line_id, url) VALUES (?, ?, ?)", {}, $res->[0][0], $line_id, $url);
-			return 1;
+			done($dbi, $upload_id);
 		}
+		return 1;
 	} elsif ($url =~ m#^http://[^/]*(?:abhor|disillusionment)\.co\.uk#i) {
 		print "Unparseable self-referential URL $url.\n";
+		err($dbi, $upload_id, "Could not parse");
 		return 1;
 	} elsif ($url =~ m#http://imgur.com/(?:gallery/|[a-z]/(?:[^/]+/)?)?([^./]+)$#) {
 		my $id = $1;
@@ -100,6 +121,7 @@ sub deal_with_entry {
 		} else {
 			print "Parse failure.\n";
 			print $resp->content;
+			err($dbi, $upload_id, "Could not parse");
 			return 1;
 		}
 	} elsif ($url =~ m#^http://(?:www.)nicovideo.jp/watch/..(\d+)#) {
@@ -123,6 +145,7 @@ sub deal_with_entry {
 		} else {
 			print $resp->content;
 			print "Youtube: Failed to find preview for $url\n";
+			err($dbi, $upload_id, "Could not parse");
 			return 1;
 		}
 	} elsif ($url =~ m#^http://rule34.paheal.net/#) {
@@ -137,6 +160,7 @@ sub deal_with_entry {
 		} else {
 			print "Parse failure.\n";
 			print $resp->content;
+			err($dbi, $upload_id, "Could not parse");
 			return 1;
 		}
 	} elsif ($url =~ m#^http://img\.eternallybored\.org/img#) {
@@ -150,6 +174,7 @@ sub deal_with_entry {
 			print "OK; I think I need $imgurl.\n";
 		} else {
 			print "Parse failure.\n";
+			err($dbi, $upload_id, "Could not parse");
 			return 1;
 		}
 	} elsif ($url =~ m#^http://danbooru\.donmai\.us/post/show/#) {
@@ -164,6 +189,7 @@ sub deal_with_entry {
 			print "OK; I think I need $imgurl.\n";
 		} else {
 			print "Parse failure.\n";
+			err($dbi, $upload_id, "Could not parse");
 			return 1;
 		}
 	} elsif ($url =~ m#^http://(?:www\.)?fukung.net/#) {
@@ -177,10 +203,12 @@ sub deal_with_entry {
 			print "OK; I think I need $imgurl.\n";
 		} else {
 			print "Parse failure.\n";
+			err($dbi, $upload_id, "Could not parse");
 			return 1;
 		}
 	} elsif ($url =~ m#^http://(?:www\.)?moid.org/banme#) {
 		print "Fail url $url.\n";
+		done($dbi, $upload_id);
 		return 1;
 	} elsif ($url =~ m#^http://(?:www\.)?moid.org/ed/#) {
 		print "Mangling moid URL $url.\n";
@@ -193,6 +221,7 @@ sub deal_with_entry {
 			print "OK; I think I need $imgurl.\n";
 		} else {
 			print "Parse failure.\n";
+			err($dbi, $upload_id, "Could not parse");
 			return 1;
 		}
 	} elsif ($url =~ m#^http://(?:www\.)?gelbooru.com/index.php.*page=post#) {
@@ -206,6 +235,7 @@ sub deal_with_entry {
 			print "OK; I think I need $imgurl.\n";
 		} else {
 			print "Parse failure.\n";
+			err($dbi, $upload_id, "Could not parse");
 			return 1;
 		}
 	} elsif ($url =~ m#^http://\S+\.pixiv.net/img/\S+/\d+\.\w+$#) {
@@ -224,6 +254,7 @@ sub deal_with_entry {
 			print "OK; I think I need $imgurl.\n";
 		} else {
 			print "Parse failure.\n";
+			err($dbi, $upload_id, "Could not parse");
 			return 1;
 		}
 	} elsif ($url =~ m#^http://(?:www.)motivatedphotos.com/#) {
@@ -237,6 +268,7 @@ sub deal_with_entry {
 			print "OK; I think I need $imgurl.\n";
 		} else {
 			print "Parse failure.\n";
+			err($dbi, $upload_id, "Could not parse");
 			return 1;
 		}
 	} else {
@@ -295,6 +327,7 @@ sub deal_with_entry {
 				if ((! -e "$images/$ofn") || !system("diff", $temp_file, "$images/$ofn")) {
 					if ($img_oid == 72350) {
 						print "$url is imgur broken link.\n";
+						err($dbi, $upload_id, "Imgur broken link");
 						return 1;
 					}
 					print "$url is a duplicate of $ofn ($img_oid).\n";
@@ -313,7 +346,9 @@ sub deal_with_entry {
 					} else {
 						$dbi->do("INSERT INTO image_postings (image_id, line_id, url) VALUES (?, ?, ?)", {}, $img_oid, $line_id, $url);
 					}
+					$dbi->commit or die "DB error: $!";
 					unlink($temp_file);
+					done($dbi, $upload_id);
 					return 1;
 				}
 			}
@@ -357,6 +392,7 @@ sub deal_with_entry {
 			unless ($type =~ m#^text/(?:plain|html)# || $type =~ m#^application/xhtml\+xml#) {
 				print "$url pointed to unknown MIME type $type.\n";
 				unlink($temp_file);
+				err($dbi, $upload_id, "Unknown MIME type");
 				return 1;
 			}
 			# Not an image!
@@ -384,6 +420,7 @@ sub deal_with_entry {
 				rename($fn,$temp_file);
 				$ext = 'png';
 			} else {
+				err($dbi, $upload_id, "Timeout on grab");
 				return 1;
 			}
 			$image_type = "html";
@@ -400,6 +437,7 @@ sub deal_with_entry {
 		} else {
 			unlink($temp_file);
 			print "$url pointed to unknown image type $type.\n";
+			err($dbi, $upload_id, "Unknown type");
 			return 1;
 		}
 
@@ -417,6 +455,7 @@ sub deal_with_entry {
 		if (!$width) {
 			unlink($imagefile);
 			print "$url pointed to badly formatted image.\n";
+			err($dbi, $upload_id, "Dodgy image");
 			return 1;
 		}
 		my ($pwidth, $pheight);
@@ -441,15 +480,16 @@ sub deal_with_entry {
 		} else {
 			if ($width <= $height * 1.5) {
 				$pheight = $height < 150 ? $height : 150;
-				$pwidth = $width * ($pheight / $height);
+				$pwidth = int($width * ($pheight / $height));
 			} else {
 				$pwidth = $width < 225 ? $width : 225;
-				$pheight = $height * ($pwidth / $width);
+				$pheight = int($height * ($pwidth / $width));
 			}
 			$image->Set('Size' => $pwidth.'x'.$pheight);
 			if ($image->Read($imagefile)) {
 				unlink($imagefile);
 				print "$url\'s local filename could not be read.\n";
+				err($dbi, $upload_id, "Download error(?)");
 				return 1;
 			}
 			$image->Gamma('gamma' => 0.4545454545);
@@ -462,6 +502,7 @@ sub deal_with_entry {
 			if ($image->Thumbnail(width => $pwidth, height => $pheight)) {
 				unlink($imagefile);
 				print "$url could not be thumbnailed.\n";
+				err($dbi, $upload_id, "Could not thumbnail");
 				return 1;
 			}
 			$image->Gamma('gamma' => 2.2);
@@ -472,8 +513,9 @@ sub deal_with_entry {
 		my $thumbsize = $s[7];
 		@s = stat($imagefile);
 		my $imagesize = $s[7];
-		$dbi->do("INSERT INTO images (local_filename, local_thumbname, md5sum, image_width, image_height, size, thumbnail_width, thumbnail_height, thumbnail_size, image_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", {}, $fn, $thumbfn, $sum, $width, $height, $imagesize, $pwidth, $pheight, $thumbsize, $image_type);
-		my $image_id = $dbi->last_insert_id(undef, undef, undef, undef);
+		my $sth = $dbi->prepare("INSERT INTO images (local_filename, local_thumbname, md5sum, image_width, image_height, size, thumbnail_width, thumbnail_height, thumbnail_size, image_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) returning id");
+		$sth->execute($fn, $thumbfn, $sum, $width, $height, $imagesize, $pwidth, $pheight, $thumbsize, $image_type);
+		my $image_id = $sth->fetchall_arrayref()->[0][0];
 		if (!$old_id) {
 			$dbi->do("INSERT INTO image_postings (image_id, line_id, url) VALUES (?, ?, ?)", {}, $image_id, $line_id, $url);
 			print "$url successful (image number $image_id).\n";
@@ -492,10 +534,12 @@ sub deal_with_entry {
 				remove_image($dbi, @{$res->[0]});
 			}
 		}
+		done($dbi, $upload_id);
 		return 1;
 	} else {
 		unlink($temp_file);
 		print "$url failed to fetch: ".$resp->code.": ".$resp->message."\n";
+		err($dbi, $upload_id, "Could not fetch");
 		return 1;
 	}
 }
@@ -521,6 +565,7 @@ sub cull_images {
 				$remain -= $row->[1];
 			} else {
 				print "S3 sync failed\n";
+				die "S3 failed";
 				#remove_image($dbi, $row->[0], $row->[3], $row->[4]);
 				#$remain -= $row->[1];
 			}

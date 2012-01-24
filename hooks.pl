@@ -115,24 +115,9 @@ sub reconnect {
 
 
 sub get_dbi {
-	return $_[0]->{dbi} if exists $_[0]->{dbi};
+	my $database = 'repo';
 
-	open MYCNF, "$ENV{HOME}/.my.cnf";
-	local $/;
-	my $contents = <MYCNF>;
-	close MYCNF;
-	my ($user, $database, $password);
-	$user = $1 if $contents =~ /user = (.*)/;
-	$database = $1 if $contents =~ /database = (.*)/;
-	$password = $1 if $contents =~ /password = (.*)/;
-
-	if (!$user || !$database || !$password) {
-		die("Sorry, the .my.cnf file appears to be corrupt");
-	}
-
-	my $dbh = DBI->connect("dbi:mysql:database=$database", $user, $password);
-	$dbh->{mysql_auto_reconnect} = 1;
-	$dbh->{mysql_enable_utf8} = 1;
+	my $dbh = DBI->connect("dbi:Pg:dbname=repo", '', '', {AutoCommit => 1});
 	return $dbh;
 }
 
@@ -148,8 +133,9 @@ sub on_public {
 	my $ts = scalar localtime;
 
 	print " [$ts] <$nick:$channel> $msg\n";
-	$dbi->do("INSERT INTO irc_lines (time, nick, mask, channel, text) VALUES(?, ?, ?, ?, ?);", {}, time(), $nick, $mask, $channel, $msg);
-	my $id = $dbi->last_insert_id(undef, undef, undef, undef);
+	my $sth = $dbi->prepare("INSERT INTO irc_lines (time, nick, mask, channel, text) VALUES(?, ?, ?, ?, ?) returning id;");
+	$sth->execute(time(), $nick, $mask, $channel, $msg) or die "DB error: $!";
+	my $id = $sth->fetchall_arrayref()->[0][0];
 	process_public($dbi, $irc, $nick, $mask, $where, $msg, $id);
 }
 
@@ -161,8 +147,9 @@ sub on_private {
 
 	my $ts = scalar localtime;
 	print " [$ts] <$nick> $msg\n";
-	$dbi->do("INSERT INTO irc_lines (time, nick, mask, text) VALUES(?, ?, ?, ?);", {}, time(), $nick, $mask, $msg);
-	my $id = $dbi->last_insert_id(undef, undef, undef, undef);
+	my $sth = $dbi->prepare("INSERT INTO irc_lines (time, nick, mask, text) VALUES(?, ?, ?, ?) returning id;");
+	$sth->execute(time(), $nick, $mask, $msg) or die "DB error: $!";
+	my $id = $sth->fetchall_arrayref()->[0][0];
 
 	if ($nick =~ /^bucko/ && $msg =~ /^!reload kjdhf2$/) {
 		$irc->yield( privmsg => $nick, "Trying..." );
