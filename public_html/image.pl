@@ -10,15 +10,16 @@ my $dbi = Stuff->get_dbi();
 my $q = MyCGI->new($dbi);
 my $sess_id = $q->get_session(1);
 
-my $image_id = $q->param('i');
+my $image_id = $q->param('i') || 73282;
 
 my $res = $dbi->selectall_arrayref("SELECT id, local_filename, local_thumbname, image_width, image_height, image_type, fullviews FROM images WHERE id = ?;", {}, $image_id);
 
 if (!@$res) {
-	print "Status: 404 Not Found\nContent-Type: text/html\n\n";
+	#print "Status: 404 Not Found\n
+	print "Content-Type: text/html\n\n";
 	print $q->start_html("Not Found");
 	print $q->h1("Not Found");
-	print $q->p("The image you requested does not exist.");
+	print $q->p("The image $image_id you requested does not exist.");
 	print $q->end_html;
 	exit;
 }
@@ -32,14 +33,16 @@ if (@$visit_time) {
 }
 if (!@$visit_time) {
 	$dbi->do("UPDATE images SET fullviews = fullviews + 1 WHERE id = ?;", {}, $image_id);
-	$dbi->do("INSERT INTO image_visits SET image_id = ?, time = ?, visit_key = ?", {}, $res->[0][0], time(), $ENV{REMOTE_ADDR});
+	$dbi->do("INSERT INTO image_visits (image_id, time, visit_key) VALUES (?,?,?)", {}, $res->[0][0], time(), $ENV{REMOTE_ADDR});
 	$res->[0][6]++;
 }
 
 my $posts = $dbi->selectall_arrayref("SELECT url, line_id FROM image_postings WHERE image_id = ?;", {}, $image_id);
 
 if (grep { lc $_ eq 'application/xhtml+xml' } split /\s*[,;]\s*/, $ENV{HTTP_ACCEPT}) {
-	print $q->header('application/xhtml+xml');
+	my $s = $q->header('application/xhtml+xml');
+	$s =~ s/^Status:\s*-cookie\s*\n//;
+	print $s;
 } else {
 	print $q->header;
 #	print $q->start_html("Your browser!");

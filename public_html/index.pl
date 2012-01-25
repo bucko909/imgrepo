@@ -10,8 +10,8 @@ my $dbi = Stuff::get_dbi();
 my $q = MyCGI->new($dbi);
 my $sess_id = $q->get_session(1);
 
-my ($extra, $join, @joinbind, @bind) = ("1", "");
-my $order = "MAX(irc_lines.time) DESC, images.id DESC";
+my ($extra, $join, @joinbind, @bind) = ("TRUE", "");
+my $order = "image_postings.time DESC, image_postings.image_id DESC";
 my @flags;
 my $by_image = 0;
 if (my $chan = $q->param('chan')) {
@@ -95,12 +95,12 @@ if (my $skip = $q->param('skip')) {
 }
 
 my $res;
-$res = $dbi->selectall_arrayref("SELECT AVG(size), AVG(image_width)*AVG(image_height) FROM images WHERE image_type != 'html' && image_width < 3000 && image_height < 3000;");
+$res = $dbi->selectall_arrayref("SELECT AVG(size), AVG(image_width)*AVG(image_height) FROM images WHERE image_type != 'html' AND image_width < 3000 AND image_height < 3000;");
 our ($avgsize, $avgarea) = @{$res->[0]};
 if ($by_image) {
-	$res = $dbi->selectall_arrayref("SELECT images.id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, image_type, image_height * image_width, size FROM images$join WHERE $extra GROUP BY images.id ORDER BY $order LIMIT ?, ?;", {}, @joinbind, @bind, $start, $count+1);
+	$res = $dbi->selectall_arrayref("SELECT images.id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, image_type, image_height * image_width, size FROM images$join WHERE $extra ORDER BY $order LIMIT ? OFFSET ?;", {}, @joinbind, @bind, $count+1, $start) or die "DB error: $!";
 } else {
-	$res = $dbi->selectall_arrayref("SELECT images.id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, url, irc_lines.nick, irc_lines.channel, irc_lines.time, image_type, image_height * image_width, size FROM images INNER JOIN image_postings ON images.id = image_postings.image_id INNER JOIN irc_lines ON irc_lines.id = image_postings.line_id$join WHERE $extra GROUP BY irc_lines.id, images.id ORDER BY $order LIMIT ?, ?;", {}, @joinbind, @bind, $start, $count+1);
+	$res = $dbi->selectall_arrayref("SELECT images.id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, url, irc_lines.nick, irc_lines.channel, irc_lines.time, image_type, image_height * image_width, size FROM images INNER JOIN image_postings ON images.id = image_postings.image_id INNER JOIN irc_lines ON irc_lines.id = image_postings.line_id$join WHERE $extra ORDER BY $order LIMIT ? OFFSET ?;", {}, @joinbind, @bind, $count+1, $start) or die "DB error: $!";
 }
 
 my $nav = '<p>';
@@ -138,16 +138,16 @@ if ($start == 0) {
 }
 $nav .= "</p>";
 
-if (grep { lc $_ eq 'application/xhtml+xml' } split /\s*[,;]\s*/, $ENV{HTTP_ACCEPT}) {
-	print $q->header('application/xhtml+xml');
-} else {
+#if (grep { lc $_ eq 'application/xhtml+xml' } split /\s*[,;]\s*/, $ENV{HTTP_ACCEPT}) {
+#	print $q->header('application/xhtml+xml');
+#} else {
 	print $q->header;
 #	print $q->start_html("Your browser!");
 #	print $q->h1("Sorry, XHTML only");
 #	print $q->p("Sorry, this page requires an XHTML-equipped browser. You may wish to try Opera or Firefox.");
 #	print $q->end_html;
 #	exit;
-}
+#}
 
 print <<END;
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
@@ -180,7 +180,7 @@ for(@$res[0..$number-1]) {
 	$uchan =~ s/#/%23/g;
 	my $chan = $_->[7] ? qq|<a href="?chan=$uchan">$_->[7]</a>| : 'privmsg';
 	my $extra = '';
-	my $local_url = "image?i=$_->[0]";
+	my $local_url = "image.pl?i=$_->[0]";
 	my $type = $by_image ? $_->[5] : $_->[9];
 	my $area = $by_image ? $_->[6] : $_->[10];
 	my $size = $by_image ? $_->[7] : $_->[11];

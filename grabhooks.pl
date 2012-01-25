@@ -26,6 +26,7 @@ sub deal_with_entry {
 		return 0;
 	}
 	my ($upload_id, $url, $line_id) = @{$res->[0]};
+	my $time = time();
 	$dbi->do("UPDATE upload_queue SET attempted = TRUE WHERE id = ?", {}, $upload_id);
 	$dbi->commit or die "DB error: $!";
 
@@ -91,7 +92,7 @@ sub deal_with_entry {
 			print "Image doesn't exist.\n";
 			err($dbi, $upload_id, "Image did not exist");
 		} else {
-			$dbi->do("INSERT INTO image_postings (image_id, line_id, url) VALUES (?, ?, ?)", {}, $old_id, $line_id, $url);
+			$dbi->do("INSERT INTO image_postings (image_id, line_id, url, time) VALUES (?, ?, ?, ?)", {}, $old_id, $line_id, $url, $time);
 			done($dbi, $upload_id);
 		}
 		return 1;
@@ -102,7 +103,7 @@ sub deal_with_entry {
 			print "Image doesn't exist.\n";
 			err($dbi, $upload_id, "Image did not exist");
 		} else {
-			$dbi->do("INSERT INTO image_postings (image_id, line_id, url) VALUES (?, ?, ?)", {}, $res->[0][0], $line_id, $url);
+			$dbi->do("INSERT INTO image_postings (image_id, line_id, url, time) VALUES (?, ?, ?, ?)", {}, $res->[0][0], $line_id, $url, $time);
 			done($dbi, $upload_id);
 		}
 		return 1;
@@ -344,7 +345,7 @@ sub deal_with_entry {
 							remove_image($dbi, $old_id, $img_file, $thumb_file);
 						}
 					} else {
-						$dbi->do("INSERT INTO image_postings (image_id, line_id, url) VALUES (?, ?, ?)", {}, $img_oid, $line_id, $url);
+						$dbi->do("INSERT INTO image_postings (image_id, line_id, url, time) VALUES (?, ?, ?, ?)", {}, $img_oid, $line_id, $url, $time);
 					}
 					$dbi->commit or die "DB error: $!";
 					unlink($temp_file);
@@ -517,7 +518,7 @@ sub deal_with_entry {
 		$sth->execute($fn, $thumbfn, $sum, $width, $height, $imagesize, $pwidth, $pheight, $thumbsize, $image_type);
 		my $image_id = $sth->fetchall_arrayref()->[0][0];
 		if (!$old_id) {
-			$dbi->do("INSERT INTO image_postings (image_id, line_id, url) VALUES (?, ?, ?)", {}, $image_id, $line_id, $url);
+			$dbi->do("INSERT INTO image_postings (image_id, line_id, url, time) VALUES (?, ?, ?, ?)", {}, $image_id, $line_id, $url, $time);
 			print "$url successful (image number $image_id).\n";
 			cull_images($dbi);
 		} else {

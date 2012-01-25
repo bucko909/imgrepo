@@ -65,7 +65,7 @@ for my $tag (@tags) {
 		next;
 	} elsif ($type eq 'private') {
 		if ($name eq 'delete_me') {
-			$dbi->do('INSERT INTO upload_queue SET url=CONCAT("delete ", ?)', {}, $image_id);
+			$dbi->do('INSERT INTO upload_queue (url) values(CONCAT("delete ", ?))', {}, $image_id);
 		}
 	}
 	my $existing = $dbi->selectall_arrayref("SELECT tags.id FROM tags WHERE tags.name = ? AND tags.type = ?", {}, $name, $type);
@@ -74,7 +74,7 @@ for my $tag (@tags) {
 		$tag_id = $existing->[0][0];
 	} else {
 		my $other = $dbi->selectall_arrayref("SELECT tags.id FROM tags WHERE tags.name = ?", {}, $name);
-		$dbi->do("INSERT INTO tags SET name=?, type=?", {}, $name, $type);
+		$dbi->do("INSERT INTO tags (name, type) VALUES(?, ?)", {}, $name, $type);
 		$tag_id = $dbi->last_insert_id(undef, undef, undef, undef);
 		if (@$other) {
 			$dbi->do("UPDATE tags SET has_other_type=1 WHERE name=?", {}, $name);
@@ -86,7 +86,7 @@ for my $tag (@tags) {
 		push @{$failures{existed}}, "$name:$type";
 		next;
 	} else {
-		$dbi->do("INSERT INTO image_tags SET image_id = ?, tag_id = ?, ip = ?, tag_time = ?", {}, $image_id, $tag_id, $ENV{REMOTE_ADDR}, time());
+		$dbi->do("INSERT INTO image_tags (image_id, tag_id, ip, tag_time) VALUES (?,?,?,?)", {}, $image_id, $tag_id, $ENV{REMOTE_ADDR}, time());
 	}
 	push @success, "$name:$type";
 }

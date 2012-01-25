@@ -6,21 +6,10 @@ use warnings;
 use DBI;
 
 sub get_dbi {
-	$ENV{HOME} ||= '/home/repo';
-	open MYCNF, "$ENV{HOME}/.my.cnf" or die "Could not open my.cnf file ($!)";
-	local $/;
-	my $contents = <MYCNF>;
-	close MYCNF;
-	my ($user, $database, $password);
-	$user = $1 if $contents =~ /user = (.*)/;
-	$database = $1 if $contents =~ /database = (.*)/;
-	$password = $1 if $contents =~ /password = (.*)/;
+	my $database = 'repo';
 
-	if (!$user || !$database || !$password) {
-		die("Sorry, the .my.cnf file appears to be corrupt");
-	}
-
-	return DBI->connect("dbi:mysql:database=$database", $user, $password);
+	my $dbh = DBI->connect("dbi:Pg:dbname=repo", '', '', {AutoCommit => 1});
+	return $dbh;
 }
 
 package MyCGI;
@@ -89,7 +78,9 @@ sub get_session {
 		}
 	}
 
-	$this->{bucko_dbi}->do("INSERT INTO sessions SET id = ?, start_time = ?, ip = ?", {}, $sess_id, time(), $ENV{REMOTE_ADDR});
+	my $ip = $ENV{REMOTE_ADDR} || 'local';
+
+	$this->{bucko_dbi}->do("INSERT INTO sessions (id, start_time, ip) VALUES (?, ?, ?)", {}, $sess_id, time(), $ip);
 	$this->{bucko_sess} = $sess_id;
 	return $sess_id;
 }

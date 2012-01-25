@@ -54,7 +54,7 @@ function show_editor(e) {
 function get_tags() {
 	if (!test_xhttp_t())
 		return; // Busy
-	xhttp_t.open("GET","tag_list?img=" + image_id.value,true);
+	xhttp_t.open("GET","tag_list.pl?img=" + image_id.value,true);
 	xhttp_t.onreadystatechange = tags_got;
 	xhttp_t.send('');
 }
@@ -75,7 +75,7 @@ function tags_got() {
 		if (i)
 			tagdisp.appendChild(document.createTextNode(" "));
 		var link = document.createElement("a");
-		link.href="index?tag="+bits[1]+"%3A"+bits[2];
+		link.href="index.pl?tag="+bits[1]+"%3A"+bits[2];
 		link.appendChild(document.createTextNode(parseInt(bits[3]) ? bits[1] + " (" + bits[2] + ")" : bits[1]));
 		image_tag_id_list.push(bits[0]);
 		tagdisp.appendChild(link);
@@ -85,7 +85,7 @@ function tags_got() {
 function get_rating() {
 	if (!test_xhttp_r())
 		return; // Busy
-	xhttp_r.open("GET","rating_status?img=" + image_id.value,true);
+	xhttp_r.open("GET","rating_status.pl?img=" + image_id.value,true);
 	xhttp_r.onreadystatechange = rating_got;
 	xhttp_r.send('');
 }
@@ -129,7 +129,7 @@ function rating_rate(e) {
 	clear_box(ratingdisp);
 	ratingdisp.appendChild(document.createTextNode("Please wait..."));
 
-	xhttp_r.open("GET","rating_submit?img=" + image_id.value + "&rating=" + e.currentTarget.votedirection, true);
+	xhttp_r.open("GET","rating_submit.pl?img=" + image_id.value + "&rating=" + e.currentTarget.votedirection, true);
 	xhttp_r.onreadystatechange = rating_done;
 	xhttp_r.send('');
 }
@@ -172,7 +172,7 @@ function submit_tags(e) {
 		submit_str += "&";
 		submit_str += "tag=" + str;
 	}
-	xhttp_t.open("GET","tag_submit?" + submit_str,true);
+	xhttp_t.open("GET","tag_submit.pl?" + submit_str,true);
 	xhttp_t.onreadystatechange = submit_done;
 	xhttp_t.send('');
 }
@@ -272,7 +272,7 @@ function tagbox_autocomplete_1() {
 		}
 		ac_before = tagbox.value;
 		ac_after = "";
-		xhttp_t.open('GET','tag_suggest?'+tag_query,true);
+		xhttp_t.open('GET','tag_suggest.pl?'+tag_query,true);
 		xhttp_t.onreadystatechange = tagbox_autocomplete_2;
 		xhttp_t.send('');
 		return;
@@ -290,7 +290,7 @@ function tagbox_autocomplete_1() {
 		return;
 	}
 
-	xhttp_t.open('GET','tag_autocomplete?partial='+str,true);
+	xhttp_t.open('GET','tag_autocomplete.pl?partial='+str,true);
 	xhttp_t.onreadystatechange = tagbox_autocomplete_2;
 	xhttp_t.send('');
 }
