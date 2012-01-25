@@ -399,29 +399,15 @@ sub deal_with_entry {
 			# Not an image!
 			unlink($temp_file);
 			print "$url did not point to an image. Trying a capture.\n";
-			system("rm", "-rf", "/home/repo/Desktop/");
 			mkdir("/home/repo/Desktop");
-			if (!fork) {
-				$dbi->{InactiveDestroy} = 1;
-				print "/home/repo/xvfb-ffcap firefox -width 800 -saveimage $url\n";
-				system("/home/repo/xvfb-ffcap", "firefox", -width => 800, -saveimage => $url);
-				exit;
-			}
-			my $fn;
-			my $timer = 30;
-			while(!$fn && $timer-- > 0) {
-				sleep 1;
-				$fn = </home/repo/Desktop/*.png>;
-			}
-			print "It's time for a killin'.\n";
-			print "Image: $fn\n" if $fn;
-			system("killall", "Xvfb");
-			if ($fn) {
+			system('grab-url' => $url);
+			my $fn = '/tmp/repo-out.png';
+			if(-e $fn) {
 				# Success
 				rename($fn,$temp_file);
 				$ext = 'png';
 			} else {
-				err($dbi, $upload_id, "Timeout on grab");
+				err($dbi, $upload_id, "Grab failed to produce any output image");
 				return 1;
 			}
 			$image_type = "html";
