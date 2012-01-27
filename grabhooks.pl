@@ -115,7 +115,7 @@ sub deal_with_entry {
 		my $id = $1;
 		print "Mangling imgur URL $url.\n";
 		my $resp = $ua->get($url);
-		if ($resp->content =~ m#<link rel="image_src" href="(http://i.imgur.com/$id\.[^./]+)" /># || $resp->content =~ m#<img src="(http://i.imgur.com/$id\.[^./]+)" />#) {
+		if ($resp->content =~ m#<link rel="image_src" href="(http://i.imgur.com/$id\.[^./]+)" /># || $resp->content =~ m#<img src="(http://i.imgur.com/$id\.[^./]+)" /># || $resp->content =~ m#<link rel="image_src" href="(http://i.imgur.com/[^./]{4,}\.[^./]{2,4})" />#) {
 			$referer_url = $url;
 			$imgurl = $1;
 			print "OK; I think I need $imgurl.\n";
@@ -184,12 +184,13 @@ sub deal_with_entry {
 			Referer => 'http://danbooru.donmai.us/',
 		);
 		$referer_url = $url;
-		if ($resp->content =~ m#src="(http://danbooru.donmai.us/data/sample/.*?)"# || $resp->content =~ m#src="(http://danbooru.donmai.us/data/(?!=preview).*?)"#) {
+		if ($resp->content =~ m#<a href="(http://[^/.]+.donmai.us/data/[^/]*)" id="highres"# || $resp->content =~ m#src="(http://(?:danbooru|hijiribe).donmai.us/data/sample/.*?)"# || $resp->content =~ m#src="(http://danbooru.donmai.us/data/(?!=preview).*?)"#) {
 			$imgurl = $1;
 			$imgurl =~ s|sample/sample-||;
 			print "OK; I think I need $imgurl.\n";
 		} else {
 			print "Parse failure.\n";
+			print $resp->content;
 			err($dbi, $upload_id, "Could not parse");
 			return 1;
 		}
@@ -435,26 +436,43 @@ sub deal_with_entry {
 		mkdir("$images/$d1");
 		mkdir("$images/$d1/$d2");
 		my $imagefile = "$images/$d1/$d2/$fn";
-		rename($temp_file, $imagefile);
+		if (!rename($temp_file, $imagefile)) {
+			print "Failed to rename $temp_file -> $imagefile: $!\n";
+			err($dbi, $upload_id, "Failed to rename: $!");
+			unlink($temp_file);
+			unlink($imagefile);
+			return 1;
+		}
 
 		my $image = Image::Magick->new;
+		$image->Set('disk-limit' => '0MiB');
+		$image->Set('memory-limit' => '100MiB');
+		$image->Set('map-limit' => '10MiB');
 		my ($width, $height, $size, $format) = $image->Ping($imagefile);
 		if (!$width) {
 			unlink($imagefile);
 			print "$url pointed to badly formatted image.\n";
 			err($dbi, $upload_id, "Dodgy image");
 			return 1;
+		} elsif ($width > 15000 || $height > 15000) {
+			unlink($imagefile);
+			print "$url pointed to huge image.\n";
+			err($dbi, $upload_id, "Huge image");
+			return 1;
 		}
+		print "Dimensions: $width*$height\n";
 		my ($pwidth, $pheight);
 		mkdir("$thumbs/$d1");
 		mkdir("$thumbs/$d1/$d2");
 		if ($width <= $height / 1.5) {
-
 			$pheight = $height < 150 ? $height : 150;
 			$pwidth = $width < 150 ? $width : 150;
 			# TODO upgrade PerlMagick so it can do this.
 			system("convert",
 				$imagefile.'[0]',
+				-limit => disk => '200MiB',
+				-limit => memory => '200MiB',
+				-limit => map => '100MiB',
 				-cache => 1000000,
 				-depth => 16,
 				-gamma => 0.4545454545,
@@ -473,10 +491,11 @@ sub deal_with_entry {
 				$pheight = int($height * ($pwidth / $width));
 			}
 			$image->Set('Size' => $pwidth.'x'.$pheight);
-			if ($image->Read($imagefile)) {
+			my $err;
+			if ($err = $image->Read($imagefile)) {
 				unlink($imagefile);
-				print "$url\'s local filename could not be read.\n";
-				err($dbi, $upload_id, "Download error(?)");
+				print "$url\'s local filename $imagefile could not be read: $err\n";
+				err($dbi, $upload_id, "Read error ($err)");
 				return 1;
 			}
 			$image->Gamma('gamma' => 0.4545454545);

@@ -139,7 +139,7 @@ for my $post (@$posts) {
 		my $qurl = quotemeta $q->escapeHTML($post->[0]);
 		my $text = $q->escapeHTML($_->[4]);
 		$text =~ s#[^ -~]#?#g;
-		$text =~ s#(http://\S+)#<a href="$1">$1</a>#g;
+		$text =~ s#(https?://\S+)#<a href="$1">$1</a>#g;
 		$text =~ s#(href="$qurl")#class="me" $1#g;
 		push @ltext, strftime("[%H:%M:%S] ", localtime $_->[1]).qq|&lt;<a href="/?nick=$_->[2]">$_->[2]</a>&gt; $text|;
 	}
