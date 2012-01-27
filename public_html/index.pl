@@ -104,8 +104,8 @@ my $gofurther;
 if ($q->param('skip') && $q->param('skip') =~ /^[0-9]+$/) {
 	my $start = 0;
 	my $skip = int $q->param('skip');
-	$limit = "?, ?";
-	push @bind, $q->param('skip')-1, $count+2;
+	$limit = "? OFFSET ?";
+	push @bind, $count+2, $q->param('skip')-1;
 } elsif ($q->param('from')) {	
 	$extra .= " AND image_postings.id >= ? - 1";
 	$gofurther = int $q->param('from') - 1;
