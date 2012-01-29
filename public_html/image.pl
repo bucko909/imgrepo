@@ -10,16 +10,15 @@ my $dbi = Stuff->get_dbi();
 my $q = MyCGI->new($dbi);
 my $sess_id = $q->get_session(1);
 
-my $image_id = $q->param('i') || 73282;
+my $image_id = $q->param('i');
 
-my $res = $dbi->selectall_arrayref("SELECT id, local_filename, local_thumbname, image_width, image_height, image_type, fullviews FROM images WHERE id = ?;", {}, $image_id);
+my $res = $dbi->selectall_arrayref("SELECT id, local_filename, local_thumbname, image_width, image_height, image_type, fullviews, on_s3 FROM images WHERE id = ?;", {}, $image_id);
 
 if (!@$res) {
-	#print "Status: 404 Not Found\n
-	print "Content-Type: text/html\n\n";
+	print "Status: 404 Not Found\nContent-Type: text/html\n\n";
 	print $q->start_html("Not Found");
 	print $q->h1("Not Found");
-	print $q->p("The image $image_id you requested does not exist.");
+	print $q->p("The image you requested does not exist.");
 	print $q->end_html;
 	exit;
 }
@@ -33,7 +32,7 @@ if (@$visit_time) {
 }
 if (!@$visit_time) {
 	$dbi->do("UPDATE images SET fullviews = fullviews + 1 WHERE id = ?;", {}, $image_id);
-	$dbi->do("INSERT INTO image_visits (image_id, time, visit_key) VALUES (?,?,?)", {}, $res->[0][0], time(), $ENV{REMOTE_ADDR});
+	$dbi->do("INSERT INTO image_visits SET image_id = ?, time = ?, visit_key = ?", {}, $res->[0][0], time(), $ENV{REMOTE_ADDR});
 	$res->[0][6]++;
 }
 
@@ -57,7 +56,7 @@ print <<END;
 	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 
 <html xmlns="http://www.w3.org/1999/xhtml">
-<head><meta name="Content-Type" value="application/xhtml+xml"/><title>Image $image_id</title><link rel="stylesheet" type="text/css" href="style.css"/><link rel="icon" type="image/png" href="media/favicon.png"/></head><body id="body">
+<head><meta name="Content-Type" value="application/xhtml+xml"/><title>Image $image_id</title><link rel="stylesheet" type="text/css" href="style.css"/><link rel="icon" type="image/png" href="media/favicon.png"/><script language="javascript" src="media/tagedit.js"/></head><body id="body">
 END
 print qq|<div class="m" id="main">|;
 if ($res->[0][5] eq 'youtube') {
@@ -79,10 +78,15 @@ nicodiv.scrollTop = 500;
 </script>
 END
 } else {
-	my $imgurl = $res->[0][1];
-	$imgurl =~ s#^(.)(.)#$1/$2/$1$2#;
+	my $imgurl;
+	if ($res->[0][7]) {
+		$imgurl = "http://s3img.abhor.co.uk/$res->[0][1]";
+	} else {
+		$imgurl = $res->[0][1];
+		$imgurl =~ s#^(.)(.)#images/$1/$2/$1$2#;
+	}
 	print <<END;
-<p><a id="mylink" href="images/$imgurl"><img src="images/$imgurl" style="width: $res->[0][3]px; height: $res->[0][4]px;" id="myimg"/></a></p>
+<p><a id="mylink" href="$imgurl"><img src="$imgurl" style="width: $res->[0][3]px; height: $res->[0][4]px;" id="myimg"/></a></p>
 <script lang="javascript">
 var maindiv = document.getElementById("main");
 var pagebody = document.getElementById("body");
@@ -123,7 +127,7 @@ print qq|<p>Tags: <span id="tags"></span></p>|;
 my $approve = $q->is_admin ? qq( | <a href="tag_submit.pl?tag=approved:private&amp;img=$image_id">Approve</a> | <a href="tag_submit.pl?tag=delete_me:private&amp;img=$image_id">Delete</a>) : "";
 print qq|<div id="editlink"><a href="#" id="editlinklink">Edit</a>$approve</div>|;
 print qq|<div id="editor" style="display: none;"><p><form id="tagform"><input type="text" id="tagbox" size="80" autocomplete="off"/> <input type="submit" id="tagsubmitbutton" value="Add Tags"/><input type="hidden" id="imageid" value="$res->[0][0]"/></form></p><div id="statmsg"/><div id="autocomplete"/><p>The only acceptable tagged porn is tagged nsfw and what. <b>Anything else will just result in a faster deletion.</b></p></div>|;
-print qq|<script language="javascript" src="media/tagedit.js"/>|;
+print qq|<script language="javascript">tagbox_initialise($sess_id)</script>|;
 print "</div><br/>";
 print qq|<div class="i">|;
 for my $post (@$posts) {

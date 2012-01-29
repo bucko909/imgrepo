@@ -454,13 +454,14 @@ sub deal_with_entry {
 			print "$url pointed to badly formatted image.\n";
 			err($dbi, $upload_id, "Dodgy image");
 			return 1;
-		} elsif ($width > 15000 || $height > 15000) {
+		}
+		print "Dimensions: $width*$height\n";
+		if ($width > 15000 || $height > 50000) {
 			unlink($imagefile);
 			print "$url pointed to huge image.\n";
 			err($dbi, $upload_id, "Huge image");
 			return 1;
 		}
-		print "Dimensions: $width*$height\n";
 		my ($pwidth, $pheight);
 		mkdir("$thumbs/$d1");
 		mkdir("$thumbs/$d1/$d2");
