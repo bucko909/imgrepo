@@ -5,7 +5,7 @@ use POE::Component::IRC;
 use DBI;
 use strict;
 use warnings;
-use utf8;
+use Encode qw/decode is_utf8/;
 
 # The bot has successfully connected to a server.  Join a channel.
 sub on_001 {
@@ -133,15 +133,16 @@ sub on_public {
 
 	my $ts = scalar localtime;
 
-	if (!utf8::valid($msg)) {
-		print "COCKSOADFASDFSADJ\n";
-		return;
+	if (!is_utf8($msg)) {
+		print "Decode from $msg\n";
+		$msg = decode("utf8", $msg);
+		print "To $msg\n";
 	}
 
 	print " [$ts] <$nick:$channel> $msg\n";
 	my $sth = $dbi->prepare("INSERT INTO irc_lines (time, nick, mask, channel, text) VALUES(?, ?, ?, ?, ?) returning id;");
 	if (!$sth->execute(time(), $nick, $mask, $channel, $msg)) {
-		print "DB error: $!";
+		die "DB error: $!\n";
 	}
 	my $id = $sth->fetchall_arrayref()->[0][0];
 	process_public($dbi, $irc, $nick, $mask, $where, $msg, $id);
@@ -154,9 +155,18 @@ sub on_private {
 	my ($nick, $mask) = split /!/, $who;
 
 	my $ts = scalar localtime;
+
+	if (!is_utf8($msg)) {
+		print "Decode from $msg\n";
+		$msg = decode("utf8", $msg);
+		print "To $msg\n";
+	}
+
 	print " [$ts] <$nick> $msg\n";
 	my $sth = $dbi->prepare("INSERT INTO irc_lines (time, nick, mask, text) VALUES(?, ?, ?, ?) returning id;");
-	$sth->execute(time(), $nick, $mask, $msg) or die "DB error: $!";
+	if (!$sth->execute(time(), $nick, $mask, $msg)) {
+		die "DB error: $!\n";
+	}
 	my $id = $sth->fetchall_arrayref()->[0][0];
 
 	if ($nick =~ /^bucko/ && $msg =~ /^!reload kjdhf2$/) {

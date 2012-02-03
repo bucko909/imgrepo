@@ -1,5 +1,4 @@
 //window.addEventListener('load', initialise, false);
-initialise();
 
 var tagform;
 var tagbox;
@@ -11,7 +10,10 @@ var autocomplete;
 var xhttp_t;
 var xhttp_r;
 
-function initialise() {
+var sess_id;
+function tagbox_initialise(id) {
+	if (id)
+		sess_id = id;
 	tagform = document.getElementById("tagform");
 	tagbox = document.getElementById("tagbox");
 	tagdisp = document.getElementById("tags");
@@ -27,6 +29,220 @@ function initialise() {
 	tagbox.addEventListener('keypress', tagbox_keypress, false);
 	get_tags();
 	get_rating();
+}
+
+function delete_initialise(id) {
+	if (id)
+		sess_id = id;
+	var candidates = document.getElementsByTagName("a");
+	var i;
+	for(i=0; i<candidates.length; i++) {
+		if (candidates[i].id.substr(0, 6) == "delete") {
+			candidates[i].addEventListener('click', delete_img, false);
+		}
+	}
+}
+
+var old_images_start;
+var new_images_start;
+var my_query;
+var avg_size;
+var avg_area;
+function scrolldetect_initialise(topval, bottomval, avgarea, avgsize, query, id) {
+	if (id)
+		sess_id = id;
+	avg_size = avgsize;
+	avg_area = avgarea;
+	old_images_start = topval - 1;
+	if (bottomval) {
+		new_images_start = bottomval + 1;
+		window.setTimeout("new_check()", 300000);
+	}
+	my_query = query;
+	document.addEventListener('scroll', scroll_check, false);
+}
+
+var get_images_lock;
+function scroll_check() {
+	if (get_images_lock)
+		return;
+	if (document.documentElement.offsetHeight <= document.documentElement.scrollTop + document.documentElement.clientHeight + 1) {
+		var scrolly_bit = document.getElementById("scrolly_bit");
+		if (scrolly_bit.style.display == "none") {
+			scrolly_bit.style.display = "block";
+			var link = document.createElement("a");
+			link.href="#";
+			link.appendChild(document.createTextNode("Scroll!"));
+			scrolly_bit.appendChild(link);
+		} else {
+			get_images_lock = 1;
+			scrolly_bit.removeChild(scrolly_bit.childNodes[0]);
+			scrolly_bit.style.display = "none";
+			get_more_images(0);
+		}
+	}
+}
+
+function new_check() {
+	window.setTimeout("new_check()", 300000);
+	if (get_images_lock)
+		return;
+	get_images_lock = 1;
+	get_more_images(1);
+}
+
+var xhttp_i;
+var reverse;
+function get_more_images(up) {
+	xhttp_i = new XMLHttpRequest();
+	if (up) {
+		xhttp_i.open("GET", "/image_list.pl?" + my_query + "&from="+new_images_start, true);
+		reverse = 1;
+	} else {
+		xhttp_i.open("GET", "/image_list.pl?" + my_query + "&to="+old_images_start, true);
+		reverse = null;
+	}
+	xhttp_i.onreadystatechange = got_more_images;
+	xhttp_i.send('');
+}
+
+function got_more_images() {
+	if (xhttp_i.readyState != 4)
+		return;
+
+	var new_images = xhttp_i.responseText.split(/\n/);
+	get_images_lock = null;
+	if (xhttp_i.responseText == "")
+		return;
+	var i;
+	for(i=0; i<new_images.length; i++) {
+		data = new_images[i].split(/\t/);
+		var j=0;
+		var post_id = data[j++];
+		var id = data[j++];
+		var type = data[j++];
+		var thumbnail = data[j++];
+		var width = data[j++];
+		var height = data[j++];
+		var nick = data[j++];
+		var chan = data[j++];
+		var url = data[j++];
+		var approved = data[j++];
+		var area = data[j++];
+		var size = data[j++];
+
+		var img_block = document.createElement("div");
+		var img_part_a = document.createElement("a");
+		img_part_a.href = "image.pl?i=" + id;
+		img_block.appendChild(img_part_a);
+		var img_part = document.createElement("div");
+		img_part_a.appendChild(img_part);
+
+		var size_scale1 = document.createElement("img");
+		size_scale1.style.height = "15px";
+		size_scale1.style.width = "5px";
+		size_scale1.src = "media/trans.gif";
+		size_scale1.class = "areaind";
+		var img_img = document.createElement("img");
+		var thumb_url = "/thumbs/" + thumbnail.substr(0,1) + "/" + thumbnail.substr(1,1) + "/" + thumbnail;
+		img_img.src = thumb_url;
+		img_img.style.width = "" + width + "px";
+		img_img.style.height = "" + height + "px";
+
+		img_part.appendChild(size_scale(height, area/avg_area));
+		append_img_extra(img_part, type, height);
+		img_part.appendChild(img_img);
+		append_img_extra(img_part, type, height);
+		img_part.appendChild(size_scale(height, size/avg_size));
+
+		var text_part = document.createElement("div");
+		img_block.appendChild(text_part);
+		var nicklink = document.createElement("a");
+		nicklink.href = "/?nick=" + nick;
+		nicklink.appendChild(document.createTextNode(nick));
+		text_part.appendChild(nicklink);
+		text_part.appendChild(document.createTextNode(" / "));
+		if (chan == "privmsg")
+			text_part.appendChild(document.createTextNode("privmsg"));
+		else {
+			var chanlink = document.createElement("a");
+			chanlink.href = "/?chan=" + chan;
+			chanlink.appendChild(document.createTextNode(chan));
+			text_part.appendChild(chanlink);
+		}
+		text_part.appendChild(document.createElement("br"));
+		var disp_url;
+		if (url.length > 30)
+			disp_url = url.substr(0,27) + "...";
+		else
+			disp_url = url;
+
+		if (url.substr(0,7) == "http://") {
+			var weblink = document.createElement("a");
+			weblink.href = url;
+			weblink.appendChild(document.createTextNode(disp_url));
+			text_part.appendChild(weblink);
+		} else {
+			text_part.appendChild(document.createTextNode(disp_url));
+		}
+
+		if (approved != "") {
+			text_part.appendChild(document.createTextNode("✓"));
+		}
+		if (reverse && document.getElementById("g").hasChildNodes()) {
+			document.getElementById("g").insertBefore(img_block, document.getElementById("g").firstChild);
+		} else {
+			document.getElementById("g").appendChild(img_block);
+		}
+		if (post_id >= new_images_start)
+			new_images_start = parseInt(post_id) + 1;
+		if (post_id <= old_images_start)
+			old_images_start = parseInt(post_id) - 1;
+	}
+}
+
+function size_scale(height, scale) {
+	scale = 1 - (1 / Math.sqrt(scale + 1));
+	if (scale < 0.1)
+		scale = 0.1;
+	scale = Math.round(height * scale);
+	var elt = document.createElement("img");
+	elt.className = "areaind";
+	elt.style.height = "" + scale + "px";
+	elt.src = "/media/trans.gif";
+	return elt;
+}
+
+function append_img_extra(elt, type, height) {
+	if (type == "animated") {
+		var n = document.createElement("img");
+		n.style.width = "12px"
+		n.style.height = "" + height + "px";
+		n.src = "/media/trans.gif";
+		n.style.backgroundImage = "url(/media/moviereel.png)";
+		elt.appendChild(n);
+	} else if (type == "html") {
+		var n = document.createElement("img");
+		n.style.width = "16px"
+		n.style.height = "" + height + "px";
+		n.src = "/media/trans.gif";
+		n.style.backgroundImage = "url(/media/firefox.png)";
+		elt.appendChild(n);
+	} else if (type == "youtube") {
+		var n = document.createElement("img");
+		n.style.width = "16px"
+		n.style.height = "" + height + "px";
+		n.src = "/media/trans.gif";
+		n.style.backgroundImage = "url(/media/youtube.png)";
+		elt.appendChild(n);
+	} else if (type == "nicovideo") {
+		var n = document.createElement("img");
+		n.style.width = "16px"
+		n.style.height = "" + height + "px";
+		n.src = "/media/trans.gif";
+		n.style.backgroundImage = "url(/media/niconico.png)";
+		elt.appendChild(n)
+	}
 }
 
 function test_xhttp_t() {
@@ -152,14 +368,48 @@ function rating_done() {
 	}
 }
 
+var xhttp_d;
+var deleting_id;
+function delete_img(e) {
+	xhttp_d = new XMLHttpRequest();
+	e.preventDefault();
+	if (!xhttp_d)
+		return;
+
+	deleting_id = e.currentTarget.id.substr(6);
+
+	xhttp_d.open("GET", "tag_submit.pl?img=" + deleting_id + "&sess=" + sess_id + "&tag=delete_me:private", true);
+	xhttp_d.onreadystatechange = delete_done;
+	xhttp_d.send('');
+}
+
+function delete_done() {
+	if (xhttp_d.readyState != 4)
+		return;
+
+	if (xhttp_d.responseText != "Success: delete_me:private") {
+		alert("Error: " + xhttp_d.responseText);
+		return;
+	}
+	var atags = document.getElementsByTagName("a");
+	var i;
+	var s = "";
+	for(i=atags.length-1; i>=0; i--) {
+		if (atags[i].id == "delete" + deleting_id) {
+			var to_kill = atags[i].parentNode.parentNode;
+			to_kill.parentNode.removeChild(to_kill);
+		}
+	}
+}
+
 function submit_tags(e) {
 	if (autocomplete_timer)
 		clearTimeout(autocomplete_timer);
 	autocomplete.style.display = 'none';
 	stat_msg.style.display = 'none';
+	e.preventDefault();
 	if (!test_xhttp_t())
 		return; // Busy
-	e.preventDefault();
 	var tags = tagbox.value.split(/ +/);
 	var submit_str = "img="+image_id.value;
 	var i;
@@ -172,7 +422,7 @@ function submit_tags(e) {
 		submit_str += "&";
 		submit_str += "tag=" + str;
 	}
-	xhttp_t.open("GET","tag_submit.pl?" + submit_str,true);
+	xhttp_t.open("GET","tag_submit.pl?" + submit_str + "&sess=" + sess_id,true);
 	xhttp_t.onreadystatechange = submit_done;
 	xhttp_t.send('');
 }

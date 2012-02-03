@@ -273,7 +273,8 @@ for(@$res) {
 	} elsif ($type eq 'html') {
 		$extra = qq|<img src="media/trans.gif" style="width:16px;height:$_->{thumbnail_height}px;background:url(media/firefox.png);"/>|;
 	}
-	my $qurl = $q->escapeHTML($_->{url}||'');
+	use Encode qw/encode/;
+	my $qurl = encode('utf8', $q->escapeHTML($_->{url}||''));
 	my $dispurl = $_->{url} ? (length $_->{url} > 25 ? substr($_->{url},0,22)."..." : $_->{url}) : '';
 	my $qdispurl = $q->escapeHTML($dispurl);
 	my $boxs = defined $grey_id && $grey_id < $_->{id} ? " style=\"background:gray!important;\"" : "";
