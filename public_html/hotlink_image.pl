@@ -57,7 +57,7 @@ if ($referer) {
 			$dbi->do("UPDATE hotlink_stats SET hotlink_count = hotlink_count + 1 WHERE image_id = ? AND referrer_url = ?", {}, $image_id, $referer);
 		}
 	} else {
-		$dbi->do("INSERT INTO hotlink_stats SET hotlink_count = 1, hotlink_limit = 10, initial_hotlink_time = ?, image_id = ?, referrer_url = ?", {}, time(), $image_id, $referer);
+		$dbi->do("INSERT INTO hotlink_stats (hotlink_count, hotlink_limit, initial_hotlink_time, image_id, referrer_url) VALUES (1, 10, ?, ?, ?)", {}, time(), $image_id, $referer);
 	}
 }
 

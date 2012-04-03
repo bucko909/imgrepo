@@ -65,7 +65,11 @@ for my $tag (@tags) {
 		next;
 	} elsif ($type eq 'private') {
 		if ($name eq 'delete_me') {
-			$dbi->do('INSERT INTO upload_queue (url) values(CONCAT("delete ", ?))', {}, $image_id);
+			if (!$dbi->do('INSERT INTO upload_queue (url) values(CONCAT(\'delete \', ?::text))', {}, $image_id)) {
+				$failures{sql} ||= [];
+				push @{$failures{sql}}, $tag;
+				next;
+			}
 		}
 	}
 	my $existing = $dbi->selectall_arrayref("SELECT tags.id FROM tags WHERE tags.name = ? AND tags.type = ?", {}, $name, $type);
@@ -74,8 +78,18 @@ for my $tag (@tags) {
 		$tag_id = $existing->[0][0];
 	} else {
 		my $other = $dbi->selectall_arrayref("SELECT tags.id FROM tags WHERE tags.name = ?", {}, $name);
-		$dbi->do("INSERT INTO tags (name, type) VALUES(?, ?)", {}, $name, $type);
-		$tag_id = $dbi->last_insert_id(undef, undef, undef, undef);
+		if (!$dbi->do("INSERT INTO tags (name, type) VALUES(?, ?)", {}, $name, $type)) {
+			$failures{couldnt_create} ||= [];
+			push @{$failures{couldnt_create}}, "$name:$type (".$dbi->errstr.")";
+			next;
+		}
+		$existing = $dbi->selectall_arrayref("SELECT tags.id FROM tags WHERE tags.name = ? AND tags.type = ?", {}, $name, $type);
+		if (!@$existing) {
+			$failures{couldnt_create} ||= [];
+			push @{$failures{couldnt_create}}, "$name:$type (no id)";
+			next;
+		}
+		$tag_id = $existing->[0][0];
 		if (@$other) {
 			$dbi->do("UPDATE tags SET has_other_type=1 WHERE name=?", {}, $name);
 		}
@@ -109,6 +123,8 @@ if (%failures) {
 			print "Tags which the image already had:";
 		} elsif ($_ eq 'private') {
 			print "Tags which can only be added by admin:";
+		} elsif ($_ eq 'couldnt_create') {
+			print "Tags which failed to create:";
 		}
 		for(@{$failures{$_}}) {
 			print " $_";

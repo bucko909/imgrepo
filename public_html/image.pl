@@ -32,7 +32,7 @@ if (@$visit_time) {
 }
 if (!@$visit_time) {
 	$dbi->do("UPDATE images SET fullviews = fullviews + 1 WHERE id = ?;", {}, $image_id);
-	$dbi->do("INSERT INTO image_visits SET image_id = ?, time = ?, visit_key = ?", {}, $res->[0][0], time(), $ENV{REMOTE_ADDR});
+	$dbi->do("INSERT INTO image_visits (image_id, time, visit_key) VALUES (?, ?, ?)", {}, $res->[0][0], time(), $ENV{REMOTE_ADDR});
 	$res->[0][6]++;
 }
 

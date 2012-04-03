@@ -32,10 +32,10 @@ if (!$results) {
 		print "error";
 		exit;
 	}
-	my $ret = $dbi->do("INSERT INTO rating_raters SET image_id = ?, sess_id = ?", {}, $image_id, $sess_id);
+	my $ret = $dbi->do("INSERT INTO rating_raters (image_id, sess_id) VALUES (?, ?)", {}, $image_id, $sess_id);
 	my $change = $rating eq 'up' ? 1 : -1;
 	$dbi->do("UPDATE images SET rating = rating + ? WHERE id = ?", {}, $change, $image_id);
-	$dbi->do("INSERT INTO rating_ratings SET image_id = ?, ip = ?, rating = ?", {}, $image_id, $ENV{REMOTE_ADDR}, $change);
+	$dbi->do("INSERT INTO rating_ratings (image_id, ip, rating) VALUES (?, ?, ?)", {}, $image_id, $ENV{REMOTE_ADDR}, $change);
 	# Can vote.
 	print "rated";
 }

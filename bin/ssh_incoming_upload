@@ -27,7 +27,7 @@ while read MODE SIZE NAME; do
 				MASK=""
 				QNAME=$(echo "$NAME"|sed 's/[^a-zA-Z0-9_\.-]/_/g')
 				TEXT="$QNAME"
-				LINEID=$(psql -Atc "INSERT INTO irc_lines (time, nick, mask, text) VALUES ($TIME, '$NICK', '$MASK', '$TEXT');")
+				LINEID=$(psql -qAtc "INSERT INTO irc_lines (time, nick, mask, text) VALUES ($TIME, '$NICK', '$MASK', '$TEXT') RETURNING id;")
 				psql -Atc "INSERT INTO upload_queue (url, line_id) VALUES ('local_move_in /home/repo/incoming/$FILENAME $QNAME', $LINEID) RETURNING id;" >&2
 				printf '\000'
 			else
