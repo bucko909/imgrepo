@@ -1,0 +1,7 @@
+#!/bin/sh
+
+while true; do
+	date
+	perl repograb.pl
+	sleep 5
+done

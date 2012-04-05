@@ -1,0 +1,6 @@
+#!/bin/sh
+screen -dmS repo
+screen -S repo -p 0 -X exec perl irc.pl
+screen -S repo -X screen
+screen -S repo -p 1 -X number 0
+screen -S repo -p 0 -X exec sh repograb
