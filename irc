@@ -1,0 +1,7 @@
+#!/bin/sh
+
+while true; do
+	date
+	perl irc.pl
+	sleep 5
+done

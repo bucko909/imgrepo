@@ -1,6 +1,8 @@
-#!/bin/sh
+#!/bin/bash
+SHELL=/bin/bash
+PATH="$PATH:/home/repo/bin"
 screen -dmS repo
-screen -S repo -p 0 -X exec perl irc.pl
+screen -S repo -p 0 -X exec sh irc
 screen -S repo -X screen
 screen -S repo -p 1 -X number 0
 screen -S repo -p 0 -X exec sh repograb

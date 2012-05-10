@@ -11,7 +11,7 @@ use Encode qw/decode is_utf8/;
 sub on_001 {
 	my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
 	my $irc = $heap->{IRC};
-	$heap->{DBI} ||= get_dbi();
+	$heap->{DBI} ||= get_dbi() or die "No DB";
 	$heap->{DBI} or die "Could not connect";
 
 	my $channels = $heap->{CHANNELS};

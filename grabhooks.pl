@@ -556,12 +556,14 @@ sub cull_images {
 	my $total = $dbi->selectall_arrayref("SELECT SUM(thumbnail_size) + SUM(size) FROM images WHERE NOT on_s3")->[0][0];
 	printf("Total space used: %0.2fGiB\n", $total/1024/1024/1024);
 	if ($total > 5 * 1024 * 1024 * 1024) {
-		my $first_id = $dbi->selectall_arrayref("SELECT MAX(image_id) FROM image_tags INNER JOIN tags ON tags.id = image_tags.tag_id WHERE tags.name = 'approved'")->[0][0];
+		my $first_id = $dbi->selectall_arrayref("SELECT MAX(id) FROM images")->[0][0];
+		#my $first_id = $dbi->selectall_arrayref("SELECT MAX(image_id) FROM image_tags INNER JOIN tags ON tags.id = image_tags.tag_id WHERE tags.name = 'approved'")->[0][0];
 		my $remain = $total - 5 * 1024*1024*1024;
 		print "It's cullin' time ($remain bytes to go).\n";
 		print "Tag cutoff is $first_id.\n";
 		#my $sth = $dbi->prepare("SELECT images.id, size + thumbnail_size, local_filename, local_thumbname FROM images INNER JOIN image_tags ON images.id = image_tags.image_id INNER JOIN tags ON tags.id = image_tags.tag_id WHERE tags.name = 'delete_me' AND images.rating < 0");
 		my $sth = $dbi->prepare("SELECT images.id, size, thumbnail_size, local_filename, local_thumbname FROM images LEFT OUTER JOIN image_tags tdt ON tdt.image_id = images.id AND tdt.tag_id != 4 WHERE images.id < ? AND tdt.tag_id IS NULL AND images.rating <= 0 AND NOT on_s3 GROUP BY images.id ORDER BY (images.id + images.rating*10000 + images.fullviews*1000)/(images.thumbnail_size + images.size)");
+		#my $sth = $dbi->prepare("SELECT images.id, size, thumbnail_size, local_filename, local_thumbname FROM images LEFT OUTER JOIN image_tags tdt ON tdt.image_id = images.id AND tdt.tag_id != 4 WHERE images.id < ? AND tdt.tag_id IS NULL AND images.rating <= 0 AND NOT on_s3 GROUP BY images.id ORDER BY (images.id + images.rating*10000 + images.fullviews*1000)/(images.thumbnail_size + images.size)");
 		$sth->execute($first_id);
 		my $row;
 		my $removed = 0;

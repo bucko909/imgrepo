@@ -20,6 +20,6 @@ print $q->h1("Tags");
 my $dbi = Stuff->get_dbi;
 my $results1 = $dbi->selectall_arrayref("SELECT tags.id, tags.name, tags.type, tags.has_other_type, COUNT(image_id) AS tag_count FROM tags LEFT OUTER JOIN image_tags ON image_tags.tag_id = tags.id GROUP BY tags.id ORDER BY tag_count DESC;");
 print "<p>";
-print join("\n", map { qq|<a href="index?tag=$_->[1]%3A$_->[2]">$_->[1]|.($_->[3]?" ($_->[2])":"").qq|</a>| } @$results1);
+print join("\n", map { qq|<a href="index.pl?tag=$_->[1]%3A$_->[2]">$_->[1]|.($_->[3]?" ($_->[2])":"").qq|</a>| } @$results1);
 print "</p>";
 print $q->end_html;

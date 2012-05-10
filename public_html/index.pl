@@ -196,7 +196,7 @@ if ($ismore_old) {
 	my $ns  = $res->[$#$res]{post_id} - 1;
 	$nav .= qq#<a href="?$qqs&amp;to=$ns">Older</a> #;
 }
-$nav .= qq| \| <a href="tags">Tags</a>|;
+$nav .= qq| \| <a href="tags.pl">Tags</a>|;
 if (!%params) {
 	$nav .= " | ";
 	$nav .= qq|[<a href="?delq=1">Deletion queue</a>]|;
