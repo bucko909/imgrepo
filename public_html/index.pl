@@ -14,7 +14,7 @@ my $q = MyCGI->new($dbi);
 my $sess_id = $q->get_session(1);
 
 my ($extra, $join, @joinbind, @bind) = ("TRUE", "");
-my @order = qw/-image_postings.id/;
+my @order = qw/-upload_queue.id/;
 my @flags;
 my $by_image = 0;
 if (my $chan = $q->param('chan')) {
@@ -107,13 +107,13 @@ if ($q->param('skip') && $q->param('skip') =~ /^[0-9]+$/) {
 	$limit = "? OFFSET ?";
 	push @bind, $count+2, $q->param('skip')-1;
 } elsif ($q->param('from')) {	
-	$extra .= " AND image_postings.id >= ? - 1";
+	$extra .= " AND upload_queue.id >= ? - 1";
 	$gofurther = int $q->param('from') - 1;
 	push @bind, $q->param('from');
 	$limit += 2;
 	$reverse = 1;
 } elsif ($q->param('to')) {
-	$extra .= " AND image_postings.id <= ? + 1";
+	$extra .= " AND upload_queue.id <= ? + 1";
 	$gofurther = int $q->param('to') + 1;
 	push @bind, $q->param('to');
 	$limit += 2;
@@ -129,7 +129,7 @@ our ($avgsize, $avgarea) = @{$res->[0]};
 if ($by_image) {
 	$res = $dbi->selectall_arrayref("SELECT MAX(images.id) FROM images LEFT OUTER JOIN image_tags approved_tag ON approved_tag.image_id = images.id AND approved_tag.tag_id = 840$join WHERE $extra LIMIT $limit;", {}, @joinbind, @bind);
 } else {
-	$res = $dbi->selectall_arrayref("SELECT MAX(image_postings.id) FROM image_postings INNER JOIN images ON images.id = image_postings.image_id INNER JOIN irc_lines ON irc_lines.id = image_postings.line_id LEFT OUTER JOIN image_tags approved_tag ON approved_tag.image_id = images.id AND approved_tag.tag_id = 840$join WHERE $extra LIMIT $limit;", {}, @joinbind, @bind);
+	$res = $dbi->selectall_arrayref("SELECT MAX(upload_queue.id) FROM upload_queue LEFT OUTER JOIN image_postings ON image_postings.id = upload_queue.image_posting_id LEFT OUTER JOIN images ON images.id = image_postings.image_id INNER JOIN irc_lines ON irc_lines.id = upload_queue.line_id LEFT OUTER JOIN image_tags approved_tag ON approved_tag.image_id = images.id AND approved_tag.tag_id = 840$join WHERE attempted AND $extra LIMIT $limit;", {}, @joinbind, @bind);
 }
 my $max_id = $res->[0][0];
 
@@ -137,7 +137,7 @@ my $sth;
 if ($by_image) {
 	$sth = $dbi->prepare("SELECT images.id AS id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, image_type, image_height * image_width AS area, size, approved_tag.tag_id AS approved FROM images LEFT OUTER JOIN image_tags approved_tag ON approved_tag.image_id = images.id AND approved_tag.tag_id = 840$join WHERE $extra ORDER BY $order LIMIT $limit;");
 } else {
-	$sth = $dbi->prepare("SELECT images.id AS id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, url, irc_lines.nick AS nick, irc_lines.channel AS chan, irc_lines.time AS time, image_type, image_height * image_width AS area, size, approved_tag.tag_id AS approved, image_postings.id AS post_id FROM image_postings INNER JOIN images ON images.id = image_postings.image_id INNER JOIN irc_lines ON irc_lines.id = image_postings.line_id LEFT OUTER JOIN image_tags approved_tag ON approved_tag.image_id = images.id AND approved_tag.tag_id = 840$join WHERE $extra ORDER BY $order LIMIT $limit;");
+	$sth = $dbi->prepare("SELECT images.id AS id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, upload_queue.url, irc_lines.nick AS nick, irc_lines.channel AS chan, irc_lines.time AS time, image_type, image_height * image_width AS area, size, approved_tag.tag_id AS approved, upload_queue.id AS post_id FROM upload_queue LEFT OUTER JOIN image_postings ON image_postings.id = upload_queue.image_posting_id LEFT OUTER JOIN images ON images.id = image_postings.image_id INNER JOIN irc_lines ON irc_lines.id = upload_queue.line_id LEFT OUTER JOIN image_tags approved_tag ON approved_tag.image_id = images.id AND approved_tag.tag_id = 840$join WHERE attempted AND $extra ORDER BY $order LIMIT $limit;");
 }
 
 if (!$sth) {
@@ -242,8 +242,6 @@ for(@flags) {
 }
 print qq|<div class="g" id="g">|;
 for(@$res) {
-	my $d = $_->{local_thumbname};
-	$d =~ s#^(.)(.).*#$1/$2#;
 	my $style = "";
 	if ($_->{thumbnail_width}) {
 		$style = qq| style="width:$_->{thumbnail_width}px;height:$_->{thumbnail_height}px;"|;
@@ -252,10 +250,22 @@ for(@$res) {
 	$uchan =~ s/#/%23/g;
 	my $chan = $_->{chan} ? qq|<a href="?chan=$uchan">$_->{chan}</a>| : 'privmsg';
 	my $extra = '';
-	my $local_url = "image.pl?i=$_->{id}";
+	my $local_url = $_->{id} ? "image.pl?i=$_->{id}" : "posting_log.pl?i=$_->{post_id}";
 	my $type = $_->{image_type};
 	my $area = $_->{area};
 	my $size = $_->{size};
+	my $filename;
+	if (!$_->{local_thumbname}) {
+		$type = 'notfound';
+		$size=1;
+		$area=1;
+		$_->{thumbnail_height} = 160;
+		$filename = 'media/no_image.png';
+	} else {
+		my $d = $_->{local_thumbname};
+		$d =~ s#^(.)(.).*#$1/$2#;
+		$filename = "thumbs/$d/$_->{local_thumbname}"
+	}
 	my $relarea = 1 - (1 / sqrt($area/$avgarea+1));
 	my $relsize = 1 - (1 / sqrt($size/$avgsize+1));
 	$relarea = 0.1 if $relarea < 0.1;
@@ -278,7 +288,7 @@ for(@$res) {
 	my $dispurl = $_->{url} ? (length $_->{url} > 25 ? substr($_->{url},0,22)."..." : $_->{url}) : '';
 	my $qdispurl = $q->escapeHTML($dispurl);
 	my $boxs = defined $grey_id && $grey_id < $_->{id} ? " style=\"background:gray!important;\"" : "";
-	print qq|<div><a href="$local_url"><div$boxs>$sizeind$extra<img$style src="thumbs/$d/$_->{local_thumbname}"/>$extra$areaind</div></a>|;
+	print qq|<div><a href="$local_url"><div$boxs>$sizeind$extra<img$style src="$filename"/>$extra$areaind</div></a>|;
 	my $link = $_->{url} =~ /^http/ ? qq|<a href="$qurl">$qdispurl</a>| : "$qdispurl";
 	my $approved = $_->{approved} ? qq| ✓| : "";
 	my $delete = $q->is_admin() ? qq| <a href="#" id="delete$_->{id}">✗</a>| : "";

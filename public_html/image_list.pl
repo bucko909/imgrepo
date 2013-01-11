@@ -13,12 +13,12 @@ my $dbi = Stuff->get_dbi;
 my $q = MyCGI->new($dbi);
 my $sess_id = $q->get_session();
 if (!$sess_id) {
-	print "nosess";
-	exit;
+#	print "nosess";
+#	exit;
 }
 
 my ($extra, $join, @joinbind, @bind) = ("TRUE", "");
-my @order = qw/-image_postings.id/;
+my @order = qw/-upload_queue.id/;
 my @flags;
 my $by_image = 0;
 if (my $chan = $q->param('chan')) {
@@ -111,13 +111,13 @@ if ($q->param('skip') && $q->param('skip') =~ /^[0-9]+$/) {
 	$limit = "? OFFSET ?";
 	push @bind, $count+2, $q->param('skip')-1;
 } elsif ($q->param('from')) {	
-	$extra .= " AND image_postings.id >= ? - 1";
+	$extra .= " AND upload_queue.id >= ? - 1";
 	$gofurther = int $q->param('from') - 1;
 	push @bind, $q->param('from');
 	$limit += 2;
 	$reverse = 1;
 } elsif ($q->param('to')) {
-	$extra .= " AND image_postings.id <= ? + 1";
+	$extra .= " AND upload_queue.id <= ? + 1";
 	$gofurther = int $q->param('to') + 1;
 	push @bind, $q->param('to');
 	$limit += 2;
@@ -134,7 +134,7 @@ my $sth;
 if ($by_image) {
 	$sth = $dbi->prepare("SELECT images.id AS id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, image_type, image_height * image_width AS area, size, approved_tag.tag_id AS approved FROM images LEFT OUTER JOIN image_tags approved_tag ON approved_tag.image_id = images.id AND approved_tag.tag_id = 840$join WHERE $extra ORDER BY $order LIMIT $limit;");
 } else {
-	$sth = $dbi->prepare("SELECT images.id AS id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, url, irc_lines.nick AS nick, irc_lines.channel AS chan, irc_lines.time AS time, image_type, image_height * image_width AS area, size, approved_tag.tag_id AS approved, image_postings.id AS post_id FROM image_postings INNER JOIN images ON images.id = image_postings.image_id INNER JOIN irc_lines ON irc_lines.id = image_postings.line_id LEFT OUTER JOIN image_tags approved_tag ON approved_tag.image_id = images.id AND approved_tag.tag_id = 840$join WHERE $extra ORDER BY $order LIMIT $limit;");
+	$sth = $dbi->prepare("SELECT images.id AS id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, upload_queue.url, irc_lines.nick AS nick, irc_lines.channel AS chan, irc_lines.time AS time, image_type, image_height * image_width AS area, size, approved_tag.tag_id AS approved, upload_queue.id AS post_id FROM upload_queue LEFT OUTER JOIN image_postings ON image_postings.id = image_posting_id LEFT OUTER JOIN images ON images.id = image_postings.image_id INNER JOIN irc_lines ON irc_lines.id = upload_queue.line_id LEFT OUTER JOIN image_tags approved_tag ON approved_tag.image_id = images.id AND approved_tag.tag_id = 840$join WHERE attempted AND $extra ORDER BY $order LIMIT $limit;");
 }
 
 if (!$sth) {
@@ -158,5 +158,7 @@ if (@$res > $count) {
 	$ismore_new = 1;
 }
 
-
-print join "\n", map { "$_->{post_id}\t$_->{id}\t$_->{image_type}\t$_->{local_thumbname}\t$_->{thumbnail_width}\t$_->{thumbnail_height}\t$_->{nick}\t".($_->{chan}?$_->{chan}:"privmsg")."\t$_->{url}\t".($_->{approved}?'approved':'')."\t$_->{area}\t$_->{size}" } @$res;
+do {
+	no warnings;
+	print join "\n", map { "$_->{post_id}\t$_->{id}\t$_->{image_type}\t$_->{local_thumbname}\t$_->{thumbnail_width}\t$_->{thumbnail_height}\t$_->{nick}\t".($_->{chan}?$_->{chan}:"privmsg")."\t$_->{url}\t".($_->{approved}?'approved':'')."\t$_->{area}\t$_->{size}" } @$res;
+}

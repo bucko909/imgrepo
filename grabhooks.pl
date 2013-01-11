@@ -8,8 +8,9 @@ our $images = "/home/repo/public_html/images";
 our $thumbs = "/home/repo/public_html/thumbs";
 
 sub done {
-	my ($dbi, $id) = @_;
-	$dbi->do("UPDATE upload_queue SET success = TRUE WHERE id = ?", {}, $id);
+	my ($dbi, $id, $ipid) = @_;
+	print "DONE: My posting ID is $ipid.\n";
+	$dbi->do("UPDATE upload_queue SET success = TRUE, image_posting_id = ? WHERE id = ?", {}, $ipid, $id);
 	$dbi->commit or die "DB error: $!";
 }
 
@@ -92,8 +93,8 @@ sub deal_with_entry {
 			print "Image doesn't exist.\n";
 			err($dbi, $upload_id, "Image did not exist");
 		} else {
-			$dbi->do("INSERT INTO image_postings (image_id, line_id, url, time) VALUES (?, ?, ?, ?)", {}, $old_id, $line_id, $url, $time);
-			done($dbi, $upload_id);
+			$res = $dbi->selectall_arrayref("INSERT INTO image_postings (image_id, line_id, url, time) VALUES (?, ?, ?, ?) RETURNING id", {}, $old_id, $line_id, $url, $time);
+			done($dbi, $upload_id, $res->[0][0]);
 		}
 		return 1;
 	} elsif ($url =~ m#^http://[^/]*(?:abhor|disillusionment)\.co\.uk/images/.*/([^/]*)#i) {
@@ -103,8 +104,8 @@ sub deal_with_entry {
 			print "Image doesn't exist.\n";
 			err($dbi, $upload_id, "Image did not exist");
 		} else {
-			$dbi->do("INSERT INTO image_postings (image_id, line_id, url, time) VALUES (?, ?, ?, ?)", {}, $res->[0][0], $line_id, $url, $time);
-			done($dbi, $upload_id);
+			$res = $dbi->selectall_arrayref("INSERT INTO image_postings (image_id, line_id, url, time) VALUES (?, ?, ?, ?) RETURNING id", {}, $res->[0][0], $line_id, $url, $time);
+			done($dbi, $upload_id, $res->[0][0]);
 		}
 		return 1;
 	} elsif ($url =~ m#^http://[^/]*(?:abhor|disillusionment)\.co\.uk#i) {
@@ -210,7 +211,7 @@ sub deal_with_entry {
 		}
 	} elsif ($url =~ m#^http://(?:www\.)?moid.org/banme#) {
 		print "Fail url $url.\n";
-		done($dbi, $upload_id);
+		err($dbi, $upload_id, "Moid just didn't work for some reason");
 		return 1;
 	} elsif ($url =~ m#^http://(?:www\.)?moid.org/ed/#) {
 		print "Mangling moid URL $url.\n";
@@ -346,11 +347,12 @@ sub deal_with_entry {
 							remove_image($dbi, $old_id, $img_file, $thumb_file);
 						}
 					} else {
-						$dbi->do("INSERT INTO image_postings (image_id, line_id, url, time) VALUES (?, ?, ?, ?)", {}, $img_oid, $line_id, $url, $time);
+						$res = $dbi->selectall_arrayref("INSERT INTO image_postings (image_id, line_id, url, time) VALUES (?, ?, ?, ?) RETURNING id", {}, $img_oid, $line_id, $url, $time);
 					}
 					$dbi->commit or die "DB error: $!";
 					unlink($temp_file);
-					done($dbi, $upload_id);
+					print "New ID is $res->[0][0]\n";
+					done($dbi, $upload_id, $res->[0][0]);
 					return 1;
 				}
 			}

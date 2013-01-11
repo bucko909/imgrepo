@@ -133,7 +133,11 @@ function got_more_images() {
 
 		var img_block = document.createElement("div");
 		var img_part_a = document.createElement("a");
-		img_part_a.href = "image.pl?i=" + id;
+		if (thumbnail) {
+			img_part_a.href = "image.pl?i=" + id;
+		} else {
+			img_part_a.href = "posting_log.pl?i=" + post_id;
+		}
 		img_block.appendChild(img_part_a);
 		var img_part = document.createElement("div");
 		img_part_a.appendChild(img_part);
@@ -144,7 +148,14 @@ function got_more_images() {
 		size_scale1.src = "media/trans.gif";
 		size_scale1.class = "areaind";
 		var img_img = document.createElement("img");
-		var thumb_url = "/thumbs/" + thumbnail.substr(0,1) + "/" + thumbnail.substr(1,1) + "/" + thumbnail;
+		var thumb_url;
+		if (thumbnail) {
+			var thumb_url = "/thumbs/" + thumbnail.substr(0,1) + "/" + thumbnail.substr(1,1) + "/" + thumbnail;
+		} else {
+			var thumb_url = "/media/no_image.png";
+			width = 150;
+			height = 150;
+		}
 		img_img.src = thumb_url;
 		img_img.style.width = "" + width + "px";
 		img_img.style.height = "" + height + "px";
