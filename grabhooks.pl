@@ -526,7 +526,7 @@ sub deal_with_entry {
 		$sth->execute($fn, $thumbfn, $sum, $width, $height, $imagesize, $pwidth, $pheight, $thumbsize, $image_type);
 		my $image_id = $sth->fetchall_arrayref()->[0][0];
 		if (!$old_id) {
-			$dbi->do("INSERT INTO image_postings (image_id, line_id, url, time) VALUES (?, ?, ?, ?)", {}, $image_id, $line_id, $url, $time);
+			$res = $dbi->selectall_arrayref("INSERT INTO image_postings (image_id, line_id, url, time) VALUES (?, ?, ?, ?) RETURNING id", {}, $image_id, $line_id, $url, $time);
 			print "$url successful (image number $image_id).\n";
 			cull_images($dbi);
 		} else {
@@ -543,7 +543,7 @@ sub deal_with_entry {
 				remove_image($dbi, @{$res->[0]});
 			}
 		}
-		done($dbi, $upload_id);
+		done($dbi, $upload_id, $res->[0][0]);
 		return 1;
 	} else {
 		unlink($temp_file);
