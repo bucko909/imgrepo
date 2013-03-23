@@ -548,7 +548,7 @@ sub deal_with_entry {
 	} else {
 		unlink($temp_file);
 		print "$url failed to fetch: ".$resp->code.": ".$resp->message."\n";
-		err($dbi, $upload_id, "Could not fetch");
+		err($dbi, $upload_id, "Could not fetch: ".$resp->code.": ".$resp->message);
 		return 1;
 	}
 }
