@@ -63,7 +63,7 @@ if (my $by_img  = $q->param('by_image')) {
 #SELECT images.*, IF(image_tags.tag_id IS NULL,0,1) AS tagtot FROM images LEFT OUTER JOIN image_tags ON images.id = image_tags.image_id AND image_tags.tag_id != 4 WHERE rating <= 0 AND image_tags.tag_id IS NULL GROUP BY images.id ORDER BY (images.id + fullviews*1000)/(thumbnail_size + size);
 }
 if (my @tags = $q->param('tag')) {
-	$extra .= " AND (1";
+	$extra .= " AND (TRUE";
 	my $c = 0;
 	for(@tags) {
 		my $not = s/^-//;
