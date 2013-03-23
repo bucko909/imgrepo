@@ -107,16 +107,16 @@ if ($q->param('skip') && $q->param('skip') =~ /^[0-9]+$/) {
 	$limit = "? OFFSET ?";
 	push @bind, $count+2, $q->param('skip')-1;
 } elsif ($q->param('from')) {	
-	$extra .= " AND upload_queue.id >= ? - 1";
-	$gofurther = int $q->param('from') - 1;
+	$extra .= $by_image ? " AND images.id >= ? - 1 " : " AND upload_queue.id >= ? - 1";
+	$gofurther = int $q->param('from');
 	push @bind, $q->param('from');
-	$limit += 2;
+	$limit += 1;
 	$reverse = 1;
 } elsif ($q->param('to')) {
-	$extra .= " AND upload_queue.id <= ? + 1";
-	$gofurther = int $q->param('to') + 1;
+	$extra .= $by_image ? " AND images.id <= ? + 1 " : " AND upload_queue.id <= ? + 1";
+	$gofurther = int $q->param('to');
 	push @bind, $q->param('to');
-	$limit += 2;
+	$limit += 1;
 }
 
 my @desc = $reverse ? (" DESC", "") : ("", " DESC"); 
@@ -126,14 +126,23 @@ my $res;
 $res = $dbi->selectall_arrayref("SELECT AVG(size), AVG(image_width)*AVG(image_height) FROM images WHERE image_type != 'html' AND image_width < 3000 AND image_height < 3000;");
 our ($avgsize, $avgarea) = @{$res->[0]};
 
+if ($by_image) {
+	$res = $dbi->selectall_arrayref("SELECT MAX(images.id) FROM images LEFT OUTER JOIN image_tags approved_tag ON approved_tag.image_id = images.id AND approved_tag.tag_id = 840$join WHERE $extra LIMIT $limit;", {}, @joinbind, @bind);
+} else {
+	$res = $dbi->selectall_arrayref("SELECT MAX(upload_queue.id) FROM upload_queue LEFT OUTER JOIN image_postings ON image_postings.id = upload_queue.image_posting_id LEFT OUTER JOIN images ON images.id = image_postings.image_id INNER JOIN irc_lines ON irc_lines.id = upload_queue.line_id LEFT OUTER JOIN image_tags approved_tag ON approved_tag.image_id = images.id AND approved_tag.tag_id = 840$join WHERE attempted AND $extra LIMIT $limit;", {}, @joinbind, @bind);
+}
+my $max_id = $res->[0][0];
+
 my $sth;
 if ($by_image) {
 	$sth = $dbi->prepare("SELECT images.id AS id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, image_type, image_height * image_width AS area, size, approved_tag.tag_id AS approved FROM images LEFT OUTER JOIN image_tags approved_tag ON approved_tag.image_id = images.id AND approved_tag.tag_id = 840$join WHERE $extra ORDER BY $order LIMIT $limit;");
 } else {
-	$sth = $dbi->prepare("SELECT images.id AS id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, upload_queue.url, irc_lines.nick AS nick, irc_lines.channel AS chan, irc_lines.time AS time, image_type, image_height * image_width AS area, size, approved_tag.tag_id AS approved, upload_queue.id AS post_id FROM upload_queue LEFT OUTER JOIN image_postings ON image_postings.id = image_posting_id LEFT OUTER JOIN images ON images.id = image_postings.image_id INNER JOIN irc_lines ON irc_lines.id = upload_queue.line_id LEFT OUTER JOIN image_tags approved_tag ON approved_tag.image_id = images.id AND approved_tag.tag_id = 840$join WHERE attempted AND $extra ORDER BY $order LIMIT $limit;");
+	$sth = $dbi->prepare("SELECT images.id AS id, local_filename, local_thumbname, thumbnail_width, thumbnail_height, upload_queue.url, irc_lines.nick AS nick, irc_lines.channel AS chan, irc_lines.time AS time, image_type, image_height * image_width AS area, size, approved_tag.tag_id AS approved, upload_queue.id AS post_id FROM upload_queue LEFT OUTER JOIN image_postings ON image_postings.id = upload_queue.image_posting_id LEFT OUTER JOIN images ON images.id = image_postings.image_id INNER JOIN irc_lines ON irc_lines.id = upload_queue.line_id LEFT OUTER JOIN image_tags approved_tag ON approved_tag.image_id = images.id AND approved_tag.tag_id = 840$join WHERE attempted AND $extra ORDER BY $order LIMIT $limit;");
 }
 
 if (!$sth) {
+	print $q->header('text/plain');
+	print "SQL Error fetching images.";
 	exit 0;
 }
 $sth->execute(@joinbind, @bind);
@@ -143,18 +152,37 @@ while(my $ref = $sth->fetchrow_hashref) {
 	push @$res, $ref;
 }
 
+my $newest_idx_id = ($by_image ? $res->[0]{id} : $res->[0]{post_id});
+
 # Sort out the resulting data
-my ($ismore_new, $ismore_old);
-if ($gofurther && $res->[0]{post_id} == $gofurther) {
+my ($ismore_old, $ismore_new);
+
+if ($gofurther && ($reverse ? $newest_idx_id < $gofurther : $newest_idx_id > $gofurther)) {
 	shift @$res;
-	$ismore_old = 1;
-}
-if (@$res > $count) {
-	$res = [ @{$res}[0..$count] ];
+	$newest_idx_id = ($by_image ? $res->[0]{id} : $res->[0]{post_id});
 	$ismore_new = 1;
 }
+if (@$res > $count) {
+	$res = [ @{$res}[0..$count-1] ];
+	$ismore_old = 1;
+}
+
+my $oldest_idx_id = ($by_image ? $res->[$#$res]{id} : $res->[$#$res]{post_id});
+
+if ($reverse) {
+	$res = [ reverse @$res ];
+	($ismore_old, $ismore_new) = ($ismore_new, $ismore_old);
+	($newest_idx_id, $oldest_idx_id) = ($oldest_idx_id, $newest_idx_id);
+}
+$ismore_new = 1 unless $newest_idx_id == $max_id;
+
+my $older_idx_id = $oldest_idx_id - 1;
+my $newer_idx_id = $newest_idx_id + 1;
 
 do {
 	no warnings;
+	for (@$res) {
+		$_->{post_id} ||= $_->{id};
+	}
 	print join "\n", map { "$_->{post_id}\t$_->{id}\t$_->{image_type}\t$_->{local_thumbname}\t$_->{thumbnail_width}\t$_->{thumbnail_height}\t$_->{nick}\t".($_->{chan}?$_->{chan}:"privmsg")."\t$_->{url}\t".($_->{approved}?'approved':'')."\t$_->{area}\t$_->{size}" } @$res;
 }

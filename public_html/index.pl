@@ -106,16 +106,16 @@ if ($q->param('skip') && $q->param('skip') =~ /^[0-9]+$/) {
 	$limit = "? OFFSET ?";
 	push @bind, $count+2, $q->param('skip')-1;
 } elsif ($q->param('from')) {	
-	$extra .= " AND upload_queue.id >= ? - 1";
-	$gofurther = int $q->param('from') - 1;
+	$extra .= $by_image ? " AND images.id >= ? - 1 " : " AND upload_queue.id >= ? - 1";
+	$gofurther = int $q->param('from');
 	push @bind, $q->param('from');
-	$limit += 2;
+	$limit += 1;
 	$reverse = 1;
 } elsif ($q->param('to')) {
-	$extra .= " AND upload_queue.id <= ? + 1";
-	$gofurther = int $q->param('to') + 1;
+	$extra .= $by_image ? " AND images.id <= ? + 1 " : " AND upload_queue.id <= ? + 1";
+	$gofurther = int $q->param('to');
 	push @bind, $q->param('to');
-	$limit += 2;
+	$limit += 1;
 }
 
 my @desc = $reverse ? (" DESC", "") : ("", " DESC"); 
@@ -151,25 +151,32 @@ while(my $ref = $sth->fetchrow_hashref) {
 	push @$res, $ref;
 }
 
+my $newest_idx_id = ($by_image ? $res->[0]{id} : $res->[0]{post_id});
+
 # Sort out the resulting data
 my ($ismore_old, $ismore_new);
-if ($gofurther && $res->[0]{post_id} == $gofurther) {
+
+if ($gofurther && ($reverse ? $newest_idx_id < $gofurther : $newest_idx_id > $gofurther)) {
 	shift @$res;
+	$newest_idx_id = ($by_image ? $res->[0]{id} : $res->[0]{post_id});
 	$ismore_new = 1;
 }
 if (@$res > $count) {
-	$res = [ @{$res}[0..$count] ];
+	$res = [ @{$res}[0..$count-1] ];
 	$ismore_old = 1;
 }
+
+my $oldest_idx_id = ($by_image ? $res->[$#$res]{id} : $res->[$#$res]{post_id});
+
 if ($reverse) {
 	$res = [ reverse @$res ];
 	($ismore_old, $ismore_new) = ($ismore_new, $ismore_old);
+	($newest_idx_id, $oldest_idx_id) = ($oldest_idx_id, $newest_idx_id);
 }
-if ($by_image) {
-	$ismore_new = 1 unless $res->[0]{id} == $max_id;
-} else {
-	$ismore_new = 1 unless $res->[0]{post_id} == $max_id;
-}
+$ismore_new = 1 unless $newest_idx_id == $max_id;
+
+my $older_idx_id = $oldest_idx_id - 1;
+my $newer_idx_id = $newest_idx_id + 1;
 
 my $nav = '<p class="nav">';
 if ($q->is_admin) {
@@ -187,13 +194,11 @@ my $qs = join '&amp;', map { "$_=$params{$_}" } keys %params;
 $qs =~ s/#/%23/g;
 my $qqs = $q->escapeHTML($qs);
 if ($ismore_new) {
-	my $ns  = $res->[0]{post_id} + 1;
-	$nav .= qq# | <a href="?$qqs">Newest</a> | <a href="?$qqs&amp;from=$ns">Newer</a>#;
+	$nav .= qq# | <a href="?$qqs">Newest</a> | <a href="?$qqs&amp;from=$newer_idx_id">Newer</a>#;
 }
 $nav .= " | ";
 if ($ismore_old) {
-	my $ns  = $res->[$#$res]{post_id} - 1;
-	$nav .= qq#<a href="?$qqs&amp;to=$ns">Older</a> #;
+	$nav .= qq#<a href="?$qqs&amp;to=$older_idx_id">Older</a> #;
 }
 $nav .= qq| \| <a href="tags.pl">Tags</a>|;
 if (!%params) {
@@ -297,8 +302,8 @@ for(@$res) {
 print "</div>";
 $qs =~ s/"/\\"/g;
 $qqs = $q->escapeHTML($qs);
-my $new = $ismore_new ? 0 : $res->[0]{post_id};
-print qq|<script language="javascript">delete_initialise();scrolldetect_initialise($res->[$#$res]{post_id},$new,$avgarea,$avgsize,"$qqs",$sess_id);</script>|;
+my $new = $ismore_new ? 0 : $newest_idx_id;
+print qq|<script language="javascript">delete_initialise();scrolldetect_initialise($oldest_idx_id,$new,$avgarea,$avgsize,"$qqs",$sess_id);</script>|;
 print $nav;
 my $t = time() - $start;
 printf "<p>%0.3fsecs</p>", $t;
