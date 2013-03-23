@@ -12,10 +12,6 @@ print "Expires: Thu, 01 Jan 1970 00:00:00 GMT\n\n";
 my $dbi = Stuff->get_dbi;
 my $q = MyCGI->new($dbi);
 my $sess_id = $q->get_session();
-if (!$sess_id) {
-#	print "nosess";
-#	exit;
-}
 
 my ($extra, $join, @joinbind, @bind) = ("TRUE", "");
 my @order = qw/-upload_queue.id/;

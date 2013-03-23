@@ -1,6 +1,5 @@
 #!/usr/bin/perl
 
-use DBI;
 use Stuff;
 use POSIX qw/strftime/;
 use Time::HiRes qw/time/;
