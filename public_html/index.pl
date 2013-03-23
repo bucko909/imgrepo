@@ -296,7 +296,15 @@ for(@$res) {
 	my $link = $_->{url} =~ /^http/ ? qq|<a href="$qurl">$qdispurl</a>| : "$qdispurl";
 	my $approved = $_->{approved} ? qq| ✓| : "";
 	my $delete = $q->is_admin() ? qq| <a href="#" id="delete$_->{id}">✗</a>| : "";
-	print qq|<div><a href="?nick=$_->{nick}">$_->{nick}</a> / $chan<br/>$link$approved$delete</div>| if !$by_image;
+	if ($by_image) {
+		if ($approved || $delete) {
+			print qq|<div>$approved$delete</div>|;
+		} else {
+			print qq|<div><br/></div>|;
+		}
+	} else {
+		print qq|<div><a href="?nick=$_->{nick}">$_->{nick}</a> / $chan<br/>$link$approved$delete</div>|;
+	}
 	print qq|</div> |;
 }
 print "</div>";

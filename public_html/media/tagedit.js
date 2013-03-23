@@ -168,20 +168,22 @@ function got_more_images() {
 
 		var text_part = document.createElement("div");
 		img_block.appendChild(text_part);
-		var nicklink = document.createElement("a");
-		nicklink.href = "/?nick=" + nick;
-		nicklink.appendChild(document.createTextNode(nick));
-		text_part.appendChild(nicklink);
-		text_part.appendChild(document.createTextNode(" / "));
-		if (chan == "privmsg")
-			text_part.appendChild(document.createTextNode("privmsg"));
-		else {
-			var chanlink = document.createElement("a");
-			chanlink.href = "/?chan=" + chan;
-			chanlink.appendChild(document.createTextNode(chan));
-			text_part.appendChild(chanlink);
+		if (nick) {
+			var nicklink = document.createElement("a");
+			nicklink.href = "/?nick=" + nick;
+			nicklink.appendChild(document.createTextNode(nick));
+			text_part.appendChild(nicklink);
+			text_part.appendChild(document.createTextNode(" / "));
+			if (chan == "privmsg")
+				text_part.appendChild(document.createTextNode("privmsg"));
+			else {
+				var chanlink = document.createElement("a");
+				chanlink.href = "/?chan=" + chan;
+				chanlink.appendChild(document.createTextNode(chan));
+				text_part.appendChild(chanlink);
+			}
+			text_part.appendChild(document.createElement("br"));
 		}
-		text_part.appendChild(document.createElement("br"));
 		var disp_url;
 		if (url.length > 30)
 			disp_url = url.substr(0,27) + "...";
@@ -199,6 +201,8 @@ function got_more_images() {
 
 		if (approved != "") {
 			text_part.appendChild(document.createTextNode("✓"));
+		} else if (!nick) {
+			text_part.appendChild(document.createElement("br"));
 		}
 		if (reverse && document.getElementById("g").hasChildNodes()) {
 			document.getElementById("g").insertBefore(img_block, document.getElementById("g").firstChild);
