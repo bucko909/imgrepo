@@ -129,7 +129,7 @@ sub deal_with_entry {
 	} elsif ($url =~ m#^http://(?:www.)nicovideo.jp/watch/..(\d+)#) {
 		$image_type = "nicovideo";
 		$imgurl = "http://tn-skr2.smilevideo.jp/smile?i=$1";
-	} elsif ($url =~ m#^http://(?:\w+.)?youtube.com/.*\bv=([^&]+)#) {
+	} elsif ($url =~ m#^https?://(?:(?:\w+\.)?youtube.com/.*\bv=|(?:w+\.)?youtu.be/)([^&]+)#) {
 		$image_type = "youtube";
 		my $vidid = $1;
 		print "Mangling youtube for $url.\n";
