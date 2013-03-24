@@ -107,13 +107,13 @@ if ($q->param('skip') && $q->param('skip') =~ /^[0-9]+$/) {
 	$limit = "? OFFSET ?";
 	push @bind, $count+2, $q->param('skip')-1;
 } elsif ($q->param('from')) {	
-	$extra .= $by_image ? " AND images.id >= ? - 1 " : " AND upload_queue.id >= ? - 1";
+	$extra .= $by_image ? " AND images.id >= ? " : " AND upload_queue.id >= ?";
 	$gofurther = int $q->param('from');
 	push @bind, $q->param('from');
 	$limit += 1;
 	$reverse = 1;
 } elsif ($q->param('to')) {
-	$extra .= $by_image ? " AND images.id <= ? + 1 " : " AND upload_queue.id <= ? + 1";
+	$extra .= $by_image ? " AND images.id <= ? " : " AND upload_queue.id <= ?";
 	$gofurther = int $q->param('to');
 	push @bind, $q->param('to');
 	$limit += 1;
@@ -150,6 +150,10 @@ $sth->execute(@joinbind, @bind);
 $res = [];
 while(my $ref = $sth->fetchrow_hashref) {
 	push @$res, $ref;
+}
+
+if (!@$res) {
+	exit 0;
 }
 
 my $newest_idx_id = ($by_image ? $res->[0]{id} : $res->[0]{post_id});
