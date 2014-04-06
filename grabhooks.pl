@@ -407,7 +407,10 @@ sub deal_with_entry {
 			my $fn = '/tmp/repo-out.png';
 			if(-e $fn) {
 				# Success
-				rename($fn,$temp_file);
+				if (system(mv => -f => $fn => $temp_file)) {
+					err($dbi, $upload_id, "Couldn't rename temp file: $!");
+					return 1;
+				}
 				$ext = 'png';
 			} else {
 				err($dbi, $upload_id, "Grab failed to produce any output image");
