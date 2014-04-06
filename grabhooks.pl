@@ -560,7 +560,7 @@ sub cull_images {
 	my ($dbi) = @_;
 	my $total = $dbi->selectall_arrayref("SELECT SUM(thumbnail_size) + SUM(size) FROM images WHERE NOT on_s3")->[0][0];
 	printf("Total space used: %0.2fGiB\n", $total/1024/1024/1024);
-	if ($total > 5 * 1024 * 1024 * 1024) {
+	if ($total > 50 * 1024 * 1024 * 1024) {
 		my $first_id = $dbi->selectall_arrayref("SELECT MAX(id) FROM images")->[0][0];
 		#my $first_id = $dbi->selectall_arrayref("SELECT MAX(image_id) FROM image_tags INNER JOIN tags ON tags.id = image_tags.tag_id WHERE tags.name = 'approved'")->[0][0];
 		my $remain = $total - 5 * 1024*1024*1024;
