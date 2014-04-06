@@ -112,11 +112,11 @@ sub deal_with_entry {
 		print "Unparseable self-referential URL $url.\n";
 		err($dbi, $upload_id, "Could not parse");
 		return 1;
-	} elsif ($url =~ m#http://imgur.com/(?:gallery/|[a-z]/(?:[^/]+/)?)?([^./]+)$#) {
+	} elsif ($url =~ m#http://imgur.com/(?:r/(?:[^/]+/)?)?([^./]+)$#) {
 		my $id = $1;
 		print "Mangling imgur URL $url.\n";
 		my $resp = $ua->get($url);
-		if ($resp->content =~ m#<link rel="image_src" href="(http://i.imgur.com/$id\.[^./]+)" /># || $resp->content =~ m#<img src="(http://i.imgur.com/$id\.[^./]+)" /># || $resp->content =~ m#<link rel="image_src" href="(http://i.imgur.com/[^./]{4,}\.[^./]{2,4})" />#) {
+		if ($resp->content =~ m#<link rel="image_src" href="(http://i.imgur.com/$id\.[^./]+)" ?/># || $resp->content =~ m#<img src="(http://i.imgur.com/$id\.[^./]+)" /># || $resp->content =~ m#<link rel="image_src" href="(http://i.imgur.com/[^./]{4,}\.[^./]{2,4})" />#) {
 			$referer_url = $url;
 			$imgurl = $1;
 			print "OK; I think I need $imgurl.\n";
