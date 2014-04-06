@@ -33,6 +33,7 @@ sub deal_with_entry {
 
 	my ($fh, $temp_file) = tempfile( DIR => "$ENV{HOME}/tempstor" );
 	close $fh;
+	my $can_accept = 'identity'; #HTTP::Message::decodable;
 	my $ua = LWP::UserAgent->new(
 		agent => "Abhor Repository Agent",
 	);
@@ -115,14 +116,14 @@ sub deal_with_entry {
 	} elsif ($url =~ m#http://imgur.com/(?:r/(?:[^/]+/)?)?([^./]+)$#) {
 		my $id = $1;
 		print "Mangling imgur URL $url.\n";
-		my $resp = $ua->get($url);
-		if ($resp->content =~ m#<link rel="image_src" href="(http://i.imgur.com/$id\.[^./]+)" ?/># || $resp->content =~ m#<img src="(http://i.imgur.com/$id\.[^./]+)" /># || $resp->content =~ m#<link rel="image_src" href="(http://i.imgur.com/[^./]{4,}\.[^./]{2,4})" />#) {
+		my $resp = $ua->get($url, 'Accept-Encoding' => $can_accept);
+		if ($resp->decoded_content =~ m#<link rel="image_src" href="(http://i.imgur.com/$id\.[^./]+)" ?/># || $resp->decoded_content =~ m#<img src="(http://i.imgur.com/$id\.[^./]+)" /># || $resp->decoded_content =~ m#<link rel="image_src" href="(http://i.imgur.com/[^./]{4,}\.[^./]{2,4})" />#) {
 			$referer_url = $url;
 			$imgurl = $1;
 			print "OK; I think I need $imgurl.\n";
 		} else {
 			print "Parse failure.\n";
-			print $resp->content;
+			print $resp->decoded_content;
 			err($dbi, $upload_id, "Could not parse");
 			return 1;
 		}
@@ -135,17 +136,18 @@ sub deal_with_entry {
 		print "Mangling youtube for $url.\n";
 		my $resp = $ua->get("http://www.youtube.com/results?search_query=\"$vidid\"",
 			Referer => 'http://www.youtube.com/',
+			'Accept-Encoding' => $can_accept
 		);
 		$referer_url = "http://www.youtube.com/results?search_query=\"$vidid\"";
 		my $qvidid = quotemeta $vidid;
-		if ($resp->content =~ m#((?:http:)?//[^/]*.ytimg.com/vi/$qvidid/[^"]*)#) {
+		if ($resp->decoded_content =~ m#((?:http:)?//[^/]*.ytimg.com/vi/$qvidid/[^"]*)#) {
 			$imgurl = $1;
 			if ($imgurl !~ /^http:/) {
 				$imgurl ="http:$imgurl";
 			}
 			print "Youtube: Preview image seems to be at $imgurl\n";
 		} else {
-			print $resp->content;
+			print $resp->decoded_content;
 			print "Youtube: Failed to find preview for $url\n";
 			err($dbi, $upload_id, "Could not parse");
 			return 1;
@@ -154,24 +156,25 @@ sub deal_with_entry {
 		print "Mangling rule34 URL $url.\n";
 		my $resp = $ua->get($url,
 			Referer => 'http://rule34.paheal.net/',
+			'Accept-Encoding' => $can_accept
 		);
 		$referer_url = $url;
-		if ($resp->content =~ m#<img id='main_image' src='(.*?)'>#) {
+		if ($resp->decoded_content =~ m#<img id='main_image' src='(.*?)'>#) {
 			$imgurl = $1;
 			print "OK; I think I need $imgurl.\n";
 		} else {
 			print "Parse failure.\n";
-			print $resp->content;
+			print $resp->decoded_content;
 			err($dbi, $upload_id, "Could not parse");
 			return 1;
 		}
 	} elsif ($url =~ m#^http://img\.eternallybored\.org/img#) {
 		print "Mangling eternallybored URL $url.\n";
 		my $resp = $ua->get($url,
-			Referer => 'http://img.eternallybored.org/',
+			Referer => 'http://img.eternallybored.org/', 'Accept-Encoding' => $can_accept
 		);
 		$referer_url = $url;
-		if ($resp->content =~ m#src='imgs/(.*?)'#) {
+		if ($resp->decoded_content =~ m#src='imgs/(.*?)'#) {
 			$imgurl = "http://img.eternallybored.org/imgs/$1";
 			print "OK; I think I need $imgurl.\n";
 		} else {
@@ -182,26 +185,26 @@ sub deal_with_entry {
 	} elsif ($url =~ m#^http://danbooru\.donmai\.us/post/show/#) {
 		print "Mangling danbooru URL $url.\n";
 		my $resp = $ua->get($url,
-			Referer => 'http://danbooru.donmai.us/',
+			Referer => 'http://danbooru.donmai.us/', 'Accept-Encoding' => $can_accept
 		);
 		$referer_url = $url;
-		if ($resp->content =~ m#<a href="(http://[^/.]+.donmai.us/data/[^/]*)" id="highres"# || $resp->content =~ m#src="(http://(?:danbooru|hijiribe).donmai.us/data/sample/.*?)"# || $resp->content =~ m#src="(http://danbooru.donmai.us/data/(?!=preview).*?)"#) {
+		if ($resp->decoded_content =~ m#<a href="(http://[^/.]+.donmai.us/data/[^/]*)" id="highres"# || $resp->decoded_content =~ m#src="(http://(?:danbooru|hijiribe).donmai.us/data/sample/.*?)"# || $resp->decoded_content =~ m#src="(http://danbooru.donmai.us/data/(?!=preview).*?)"#) {
 			$imgurl = $1;
 			$imgurl =~ s|sample/sample-||;
 			print "OK; I think I need $imgurl.\n";
 		} else {
 			print "Parse failure.\n";
-			print $resp->content;
+			print $resp->decoded_content;
 			err($dbi, $upload_id, "Could not parse");
 			return 1;
 		}
 	} elsif ($url =~ m#^http://(?:www\.)?fukung.net/#) {
 		print "Mangling fukung URL $url.\n";
 		my $resp = $ua->get($url,
-			Referer => "http://fukung.net/",
+			Referer => "http://fukung.net/", 'Accept-Encoding' => $can_accept
 		);
 		$referer_url = $url;
-		if ($resp->content =~ m#src="(http://media.fukung.net/images/[^"]+)"#) {
+		if ($resp->decoded_content =~ m#src="(http://media.fukung.net/images/[^"]+)"#) {
 			$imgurl = $1;
 			print "OK; I think I need $imgurl.\n";
 		} else {
@@ -216,10 +219,10 @@ sub deal_with_entry {
 	} elsif ($url =~ m#^http://(?:www\.)?moid.org/ed/#) {
 		print "Mangling moid URL $url.\n";
 		my $resp = $ua->get($url,
-			Referer => "http://www.moid.org/",
+			Referer => "http://www.moid.org/", 'Accept-Encoding' => $can_accept
 		);
 		$referer_url = $url;
-		if ($resp->content =~ m#src="(/ed/images/.*?)"#) {
+		if ($resp->decoded_content =~ m#src="(/ed/images/.*?)"#) {
 			$imgurl = "http://www.moid.org$1";
 			print "OK; I think I need $imgurl.\n";
 		} else {
@@ -230,10 +233,10 @@ sub deal_with_entry {
 	} elsif ($url =~ m#^http://(?:www\.)?gelbooru.com/index.php.*page=post#) {
 		print "Mangling gelbooru URL $url.\n";
 		my $resp = $ua->get($url,
-			Referer => "http://www.gelbooru.com/",
+			Referer => "http://www.gelbooru.com/", 'Accept-Encoding' => $can_accept
 		);
 		$referer_url = $url;
-		if ($resp->content =~ m#src="(http://(?:.*?)gelbooru\.com/+images/+.*?)"#) {
+		if ($resp->decoded_content =~ m#src="(http://(?:.*?)gelbooru\.com/+images/+.*?)"#) {
 			$imgurl = $1;
 			print "OK; I think I need $imgurl.\n";
 		} else {
@@ -248,10 +251,10 @@ sub deal_with_entry {
 	} elsif ($url =~ m#http://www.pixiv.net/(?:member_illust|index).php\?mode=(?:medium|big)&illust_id=(\d+)#) {
 		print "Mangling pixiv URL $url\n";
 		my $resp = $ua->get($url,
-			Referer => 'http://www.pixiv.net/',
+			Referer => 'http://www.pixiv.net/', 'Accept-Encoding' => $can_accept
 		);
 		$referer_url = $url;
-		if ($resp->content =~ m#src="(http://\S+\.pixiv.net/img/\S+/\d+(?:_\w)?\.\w+)"#) {
+		if ($resp->decoded_content =~ m#src="(http://\S+\.pixiv.net/img/\S+/\d+(?:_\w)?\.\w+)"#) {
 			$imgurl = $1;
 			$imgurl =~ s/_\w\././;
 			print "OK; I think I need $imgurl.\n";
@@ -263,10 +266,10 @@ sub deal_with_entry {
 	} elsif ($url =~ m#^http://(?:www.)motivatedphotos.com/#) {
 		print "Mangling motivatedphotos URL $url.\n";
 		my $resp = $ua->get($url,
-			Referer => 'http://www.motivatedphotos.com/',
+			Referer => 'http://www.motivatedphotos.com/', 'Accept-Encoding' => $can_accept
 		);
 		$referer_url = $url;
-		if ($resp->content =~ m#src="(http://yarp\d*.motivatedphotos.com/autocdn/[^"]*(?<!-t2)\.jpg)"#) {
+		if ($resp->decoded_content =~ m#src="(http://yarp\d*.motivatedphotos.com/autocdn/[^"]*(?<!-t2)\.jpg)"#) {
 			$imgurl = $1;
 			print "OK; I think I need $imgurl.\n";
 		} else {
@@ -290,7 +293,7 @@ sub deal_with_entry {
 			print "Get $imgurl.\n";
 			$resp = $ua->get($imgurl,
 				Referer => $referer_url,
-				':content_file' => $temp_file,
+				':content_file' => $temp_file, 'Accept-Encoding' => $can_accept
 			);
 			if (!$resp->is_success && (!$resp->header('Content-Length') || $resp->header('Content-Length') == (stat($temp_file))[7])) {
 				print "$url failed to fetch: ".$resp->code.": ".$resp->message.".\n";
@@ -299,6 +302,17 @@ sub deal_with_entry {
 					sleep 5;
 				}
 			} else {
+				if ($resp->header('Content-Encoding') eq 'gzip') {
+					print "gzip encoded; trying to decompress\n";
+					if (!rename($temp_file, "$temp_file.gz")) {
+						print "Failed! $!\n";
+						next
+					}
+					if (system(gunzip => "$temp_file.gz")) {
+						system(ls => -l => $temp_file => "$temp_file.gz");
+						next;
+					}
+				}
 				last;
 			}
 		}
