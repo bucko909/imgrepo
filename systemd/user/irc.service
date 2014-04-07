@@ -1,0 +1,9 @@
+[Unit]
+Description=Repo IRC Watcher
+
+[Service]
+ExecStart=/home/repo/repo/irc
+Restart=always
+
+[Install]
+WantedBy=repo.target

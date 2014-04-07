@@ -1,0 +1,9 @@
+[Unit]
+Description=Repo Image Grabber
+
+[Service]
+ExecStart=/home/repo/repo/repograb
+Restart=always
+
+[Install]
+WantedBy=repo.target

@@ -1,0 +1,7 @@
+[Unit]
+Description=Repo root target
+AllowIsolate=true
+Requires=dbus.socket
+
+[Install]
+Alias=default.target
