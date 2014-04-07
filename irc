@@ -1,7 +1,9 @@
 #!/bin/sh
 
-while true; do
+cd /home/repo/repo
+. ./env
+(
 	date
 	perl irc.pl
 	sleep 5
-done
+) 2>&1 >> /var/log/repo/irc.log
