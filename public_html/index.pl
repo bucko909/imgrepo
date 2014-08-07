@@ -279,7 +279,7 @@ for(@$res) {
 	$relsize = int($relsize*$_->{thumbnail_height});
 	my $areaind = qq|<img src="media/trans.gif" class="areaind" style="height:${relarea}px;"/>|;
 	my $sizeind = qq|<img src="media/trans.gif" class="areaind" style="height:${relsize}px;"/>|;
-	if ($type eq 'animated') {
+	if ($type eq 'animated' || $type eq 'webm') {
 		$extra = qq|<img src="media/trans.gif" style="width:12px;height:$_->{thumbnail_height}px;background:url(media/moviereel.png);"/>|;
 	} elsif ($type eq 'nicovideo') {
 		$extra = qq|<img src="media/trans.gif" style="width:16px;height:$_->{thumbnail_height}px;background:url(media/niconico.png);"/>|;
