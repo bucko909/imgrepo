@@ -86,27 +86,28 @@ END
 		$imgurl =~ s#^(.)(.)#images/$1/$2/$1$2#;
 	}
 	print <<END;
-<p><a id="mylink" href="$imgurl">
+<p>
 END
 	if ($res->[0][5] eq 'webm') {
 		print <<END;
-<video style="width: $res->[0][3]px; height: $res->[0][4]px;" id="myimg">
+<video style="width: $res->[0][3]px; height: $res->[0][4]px;" id="myimg" controls="controls">
 <source src="$imgurl" type="video/webm"/>
 Support webm, noob.
 </video>
 END
 	} else {
 		print <<END;
+<a id="mylink" href="$imgurl">
 <img src="$imgurl" style="width: $res->[0][3]px; height: $res->[0][4]px;" id="myimg"/>
+</a>
 END
 	}
 	print <<END;
-</a></p>
+</p>
 <script lang="javascript">
 var maindiv = document.getElementById("main");
 var pagebody = document.getElementById("body");
 var elt = document.getElementById("myimg");
-var mylink = document.getElementById("mylink");
 var origheight = elt.style.height;
 var origwidth = elt.style.width;
 function resize() {
