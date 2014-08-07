@@ -6,4 +6,4 @@ cd /home/repo/repo
 	date
 	perl repograb.pl
 	sleep 5
-) 2>&1 >> /var/log/repo/repograb.log
+) >> /var/log/repo/repograb.log 2>&1
