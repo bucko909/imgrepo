@@ -86,7 +86,7 @@ sub deal_with_entry {
 		rename($1, $temp_file);
 		print "Local upload of $2; renamed $1 -> $temp_file\n";
 		$image_type = 'local';
-	} elsif ($url =~ m#^http://[^/]*(?:abhor|disillusionment)\.co\.uk/.*i=(\d+)#i) {
+	} elsif ($url =~ m#^http://[^/]*(?:abhor|disillusionment)\.(?:co\.uk|moe)/.*i=(\d+)#i) {
 		print "Self-referential URL $url to image $1.\n";
 		$old_id = $1;
 		my $res = $dbi->selectall_arrayref("SELECT id FROM images WHERE images.id = ?", {}, $old_id);
