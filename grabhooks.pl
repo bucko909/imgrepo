@@ -406,7 +406,7 @@ sub deal_with_entry {
 		}
 		$type =~ s/;.*//;
 		my $ext;
-		if ($type !~ m#^image/#) {
+		if ($type !~ m#^image/# && $type ne 'video/webm') {
 			unless ($type =~ m#^text/(?:plain|html)# || $type =~ m#^application/xhtml\+xml#) {
 				print "$url pointed to unknown MIME type $type.\n";
 				unlink($temp_file);
@@ -441,6 +441,9 @@ sub deal_with_entry {
 			$ext = 'svg';
 		} elsif ($type eq 'image/png') {
 			$ext = 'png';
+		} elsif ($type eq 'video/webm') {
+			$image_type = 'webm';
+			$ext = 'webm';
 		} else {
 			unlink($temp_file);
 			print "$url pointed to unknown image type $type.\n";
@@ -467,7 +470,27 @@ sub deal_with_entry {
 		$image->Set('disk-limit' => '0MiB');
 		$image->Set('memory-limit' => '100MiB');
 		$image->Set('map-limit' => '10MiB');
-		my ($width, $height, $size, $format) = $image->Ping($imagefile);
+		my $previewfile;
+		if ($image_type eq 'webm') {
+			print "webm preview via mplayer...\n";
+			if (system("mplayer",
+				-frames => 1,
+				-vo => "jpeg",
+				$imagefile)) {
+				print "mplayer failed to start.\n";
+				err($dbi, $upload_id, "No mplayer?");
+				return 1;
+			}
+			if (! -e "00000001.jpg") {
+				print "mplayer preview fail.\n";
+				err($dbi, $upload_id, "No mplayer frame preview");
+				return 1;
+			}
+			$previewfile = "00000001.jpg";
+		} else {
+			$previewfile = $imagefile;
+		}
+		my ($width, $height, $size, $format) = $image->Ping($previewfile);
 		if (!$width) {
 			unlink($imagefile);
 			print "$url pointed to badly formatted image.\n";
@@ -489,7 +512,7 @@ sub deal_with_entry {
 			$pwidth = $width < 150 ? $width : 150;
 			# TODO upgrade PerlMagick so it can do this.
 			system("convert",
-				$imagefile.'[0]',
+				$previewfile.'[0]',
 				-limit => disk => '200MiB',
 				-limit => memory => '200MiB',
 				-limit => map => '100MiB',
@@ -512,7 +535,7 @@ sub deal_with_entry {
 			}
 			$image->Set('Size' => $pwidth.'x'.$pheight);
 			my $err;
-			if ($err = $image->Read($imagefile)) {
+			if ($err = $image->Read($previewfile)) {
 				unlink($imagefile);
 				print "$url\'s local filename $imagefile could not be read: $err\n";
 				err($dbi, $upload_id, "Read error ($err)");
