@@ -507,25 +507,12 @@ sub deal_with_entry {
 		my ($pwidth, $pheight);
 		mkdir("$thumbs/$d1");
 		mkdir("$thumbs/$d1/$d2");
-		if ($width <= $height / 1.5) {
-			$pheight = $height < 150 ? $height : 150;
-			$pwidth = $width < 150 ? $width : 150;
-			# TODO upgrade PerlMagick so it can do this.
-			system("convert",
-				$previewfile.'[0]',
-				-limit => disk => '200MiB',
-				-limit => memory => '200MiB',
-				-limit => map => '100MiB',
-				-cache => 1000000,
-				-depth => 16,
-				-gamma => 0.4545454545,
-				-thumbnail => $pwidth."x".$pheight."^",
-				-gravity => "North",
-				-extent => $pwidth."x".$pheight,
-				-gamma => 2.2,
-				-depth => 8,
-				"$thumbs/$d1/$d2/$thumbfn");
-		} else {
+		my $eret = eval {
+			if ($width <= $height / 1.5) {
+				print "Bad aspect.\n";
+				# TODO upgrade PerlMagick so it can do this.
+				die ['system'];
+			}
 			if ($width <= $height * 1.5) {
 				$pheight = $height < 150 ? $height : 150;
 				$pwidth = int($width * ($pheight / $height));
@@ -536,8 +523,10 @@ sub deal_with_entry {
 			$image->Set('Size' => $pwidth.'x'.$pheight);
 			my $err;
 			if ($err = $image->Read($previewfile)) {
-				unlink($imagefile);
 				print "$url\'s local filename $imagefile could not be read: $err\n";
+				die ['system'];
+				#system("mv", $imagefile, "/tmp/broken.$ext");
+				#unlink($imagefile);
 				err($dbi, $upload_id, "Read error ($err)");
 				return 1;
 			}
@@ -557,7 +546,29 @@ sub deal_with_entry {
 			$image->Gamma('gamma' => 2.2);
 			$image->Set('Depth' => 8);
 			$image->Write(filename => "$thumbs/$d1/$d2/$thumbfn", compress => 'JPEG');
+			return 0;
+		};
+		print "m", $eret, "m", $@, "m\n";
+		if (ref $@ eq 'ARRAY' && $@->[0] eq 'system') {
+			print "Using system()\n";
+			$pheight = $height < 150 ? $height : 150;
+			$pwidth = $width < 150 ? $width : 150;
+			system("convert",
+				$previewfile.'[0]',
+				-limit => disk => '200MiB',
+				-limit => memory => '200MiB',
+				-limit => map => '100MiB',
+				-cache => 1000000,
+				-depth => 16,
+				-gamma => 0.4545454545,
+				-thumbnail => $pwidth."x".$pheight."^",
+				-gravity => "North",
+				-extent => $pwidth."x".$pheight,
+				-gamma => 2.2,
+				-depth => 8,
+				"$thumbs/$d1/$d2/$thumbfn");
 		}
+		return $eret if $eret;
 		my @s = stat("$thumbs/$d1/$d2/$thumbfn");
 		my $thumbsize = $s[7];
 		@s = stat($imagefile);
