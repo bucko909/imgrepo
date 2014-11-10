@@ -417,7 +417,7 @@ sub deal_with_entry {
 			unlink($temp_file);
 			print "$url did not point to an image. Trying a capture.\n";
 			mkdir("/home/repo/Desktop");
-			system('grab-url' => $url);
+			system('/home/repo/bin/grab-url' => $url);
 			my $fn = '/tmp/repo-out.png';
 			if(-e $fn) {
 				# Success
