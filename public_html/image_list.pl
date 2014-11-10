@@ -129,7 +129,7 @@ our ($avgsize, $avgarea) = @{$res->[0]};
 if ($by_image) {
 	$res = $dbi->selectall_arrayref("SELECT MAX(images.id) FROM images LEFT OUTER JOIN image_tags approved_tag ON approved_tag.image_id = images.id AND approved_tag.tag_id = 840$join WHERE $extra LIMIT $limit;", {}, @joinbind, @bind);
 } else {
-	$res = $dbi->selectall_arrayref("SELECT MAX(upload_queue.id) FROM upload_queue LEFT OUTER JOIN image_postings ON image_postings.id = upload_queue.image_posting_id LEFT OUTER JOIN images ON images.id = image_postings.image_id INNER JOIN irc_lines ON irc_lines.id = upload_queue.line_id LEFT OUTER JOIN image_tags approved_tag ON approved_tag.image_id = images.id AND approved_tag.tag_id = 840$join WHERE attempted AND $extra LIMIT $limit;", {}, @joinbind, @bind);
+	$res = $dbi->selectall_arrayref("SELECT upload_queue.id FROM upload_queue LEFT OUTER JOIN image_postings ON image_postings.id = upload_queue.image_posting_id LEFT OUTER JOIN images ON images.id = image_postings.image_id INNER JOIN irc_lines ON irc_lines.id = upload_queue.line_id LEFT OUTER JOIN image_tags approved_tag ON approved_tag.image_id = images.id AND approved_tag.tag_id = 840$join WHERE attempted AND $extra ORDER BY upload_queue.id DESC LIMIT 1;", {}, @joinbind, @bind);
 }
 my $max_id = $res->[0][0];
 
